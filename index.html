@@ -786,8 +786,9 @@ th, td { padding:6px 8px; text-align:center; border-bottom:1px solid var(--borde
     if (!weather) return "";
     var icon = WMO_WEATHER_ICON[weather.code] || "🌡";
     var label = WMO_WEATHER_LABEL[weather.code] || "";
-    var precip = weather.precipProb != null && weather.precipProb >= 20 ? ", " + weather.precipProb + "% precip" : "";
-    return '<span class="weather-line">' + icon + " " + weather.tempF + "°F" + (label ? " " + escapeHtml(label) : "") + escapeHtml(precip) + "</span>";
+    var precipText = weather.precipProb != null ? weather.precipProb + "% chance of precip" : "";
+    var rest = [label, precipText].filter(Boolean).join(", ");
+    return '<span class="weather-line">' + icon + (rest ? " " + escapeHtml(rest) : "") + "</span>";
   }
 
   // --------------------------------------------------------------------------
@@ -877,26 +878,17 @@ th, td { padding:6px 8px; text-align:center; border-bottom:1px solid var(--borde
   }
 
   // Weirdest Weather Games: reuses getGameWeather across the week's games and
-  // ranks by a simple extremity score - very cold or very hot temperatures,
-  // high precipitation odds, and severe conditions (heavy rain/snow,
-  // thunderstorms) all add points. Indoor games and games missing venue/city
-  // data are skipped by getGameWeather itself (returns null).
-  function weatherWeirdScore(w) {
-    var score = 0;
-    if (w.tempF <= 20) score += 32 - w.tempF;
-    else if (w.tempF >= 95) score += w.tempF - 90;
-    if (w.precipProb != null && w.precipProb >= 50) score += w.precipProb / 5;
-    if (w.code != null && [65, 75, 82, 95, 96, 99].indexOf(w.code) !== -1) score += 15;
-    else if (w.code != null && [55, 61, 63, 71, 73].indexOf(w.code) !== -1) score += 6;
-    return score;
-  }
+  // ranks by precipitation chance alone (highest chance of rain/snow first) -
+  // temperature isn't factored in at all. Indoor games and games missing
+  // venue/city data are skipped by getGameWeather itself (returns null), and
+  // a game only shows up here once its forecast gives it at least some real
+  // chance of precipitation.
   function computeWeirdWeather(games) {
     return Promise.all(games.map(function (g) {
       return getGameWeather(g).then(function (w) { return w ? { game: g, weather: w } : null; }).catch(function () { return null; });
     })).then(function (results) {
-      var list = results.filter(Boolean);
-      list.forEach(function (e) { e.weirdScore = weatherWeirdScore(e.weather); });
-      return list.filter(function (e) { return e.weirdScore > 0; }).sort(function (a, b) { return b.weirdScore - a.weirdScore; });
+      var list = results.filter(function (e) { return e && e.weather.precipProb != null && e.weather.precipProb > 0; });
+      return list.sort(function (a, b) { return b.weather.precipProb - a.weather.precipProb; });
     });
   }
   function weatherRowHtml(rank, entry) {
@@ -906,7 +898,7 @@ th, td { padding:6px 8px; text-align:center; border-bottom:1px solid var(--borde
     return "<tr><td>" + rank + "</td><td>" + gameCellLinkHtml(g, matchup) + "</td><td>" + escapeHtml(venueText) + "</td><td>" + weatherLineHtml(entry.weather) + "</td></tr>";
   }
   function weatherTableHtml(entries, limit) {
-    if (!entries.length) return emptyHtml("No notably wild weather found for this week's outdoor games.");
+    if (!entries.length) return emptyHtml("No games with a real chance of rain or snow this week.");
     var head = "<thead><tr><th>#</th><th>Game</th><th>Venue</th><th>Forecast</th></tr></thead>";
     return '<table class="standings-table weather-table">' + head + "<tbody>" + entries.slice(0, limit).map(function (e, i) { return weatherRowHtml(i + 1, e); }).join("") + "</tbody></table>";
   }
@@ -917,7 +909,7 @@ th, td { padding:6px 8px; text-align:center; border-bottom:1px solid var(--borde
       '<section class="view-header"><h1>Weekly Recap</h1><p class="muted small">Upsets, comebacks, and wild weather from this week\'s games (roughly three days back through four days ahead).</p></section>' +
       '<section class="recap-section"><h2>Upset Alert / Chaos Meter</h2><p class="muted small">Underdogs that beat the spread this week, ranked by how many points they covered by. Needs a completed game with both a final score and a pre-game spread on file.</p><div id="upset-slot">' + loadingHtml("Loading this week's games...") + "</div></section>" +
       '<section class="recap-section"><h2>Biggest Comeback of the Week</h2><p class="muted small">The largest deficit a team overcame to win, measured at the end of any quarter - a bigger deficit that closed before the quarter ended won\'t be caught.</p><div id="comeback-slot">' + loadingHtml("Loading...") + "</div></section>" +
-      '<section class="recap-section"><h2>Weirdest Weather Games</h2><p class="muted small">Outdoor games with the most extreme forecast conditions near kickoff.</p><div id="weather-slot">' + loadingHtml("Loading...") + "</div></section>";
+      '<section class="recap-section"><h2>Top Chances of Precipitation</h2><p class="muted small">Outdoor games with the best chance of rain or snow near kickoff, highest chance first.</p><div id="weather-slot">' + loadingHtml("Loading...") + "</div></section>";
 
     var upsetSlot = root.querySelector("#upset-slot");
     var comebackSlot = root.querySelector("#comeback-slot");
