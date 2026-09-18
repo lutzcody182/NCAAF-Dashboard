@@ -1,0 +1,2907 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>College Football Dashboard</title>
+<style>
+:root {
+  --bg: #f4f5f7; --surface: #fff; --surface-alt: #eef0f3; --border: #dde1e6;
+  --text: #16181d; --text-muted: #666c76; --accent: #b3121b; --accent-contrast: #fff;
+  --live: #d5271f; --final: #4a5361; --upcoming: #1f6feb; --win: #10793f;
+  --shadow: 0 1px 2px rgba(16,20,26,.06), 0 1px 8px rgba(16,20,26,.04); --radius: 10px;
+  color-scheme: light dark;
+}
+@media (prefers-color-scheme: dark) {
+  :root {
+    --bg:#0f1115; --surface:#191c22; --surface-alt:#21252d; --border:#2c313b;
+    --text:#eef0f3; --text-muted:#9aa1ac; --accent:#ff5b5b; --accent-contrast:#14161a;
+    --live:#ff5b5b; --final:#9aa1ac; --upcoming:#5b9dff; --win:#3fd17a;
+    --shadow: 0 1px 2px rgba(0,0,0,.4), 0 2px 12px rgba(0,0,0,.35);
+  }
+}
+* { box-sizing: border-box; }
+body { margin:0; background:var(--bg); color:var(--text); font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif; -webkit-font-smoothing:antialiased; }
+a { color: inherit; }
+.app-header { position:sticky; top:0; z-index:10; background:var(--surface); border-bottom:1px solid var(--border); }
+.app-header-inner { max-width:1100px; margin:0 auto; display:flex; align-items:center; justify-content:space-between; padding:12px 16px; gap:16px; flex-wrap:wrap; }
+.brand { font-weight:700; font-size:1.1rem; text-decoration:none; white-space:nowrap; }
+.main-nav { display:flex; gap:4px; }
+.main-nav a { text-decoration:none; padding:8px 14px; border-radius:999px; font-weight:600; font-size:.92rem; color:var(--text-muted); }
+.main-nav a.active, .main-nav a:hover { background:var(--surface-alt); color:var(--text); }
+.team-search { position:relative; flex:1; min-width:140px; max-width:260px; }
+.team-search-input { width:100%; padding:8px 12px; border-radius:999px; border:1px solid var(--border); background:var(--surface-alt); color:var(--text); font-size:.85rem; }
+.team-search-results { position:absolute; top:calc(100% + 6px); left:0; right:0; background:var(--surface); border:1px solid var(--border); border-radius:10px; box-shadow:var(--shadow); overflow:hidden; z-index:20; max-height:320px; overflow-y:auto; }
+.team-search-item { display:flex; align-items:center; gap:8px; padding:8px 12px; text-decoration:none; color:var(--text); font-size:.85rem; font-weight:600; }
+.team-search-item:hover, .team-search-item:focus { background:var(--surface-alt); }
+.team-search-empty { padding:10px 12px; color:var(--text-muted); font-size:.82rem; }
+.app-root { max-width:1100px; margin:0 auto; padding:16px; min-height:60vh; }
+.app-footer { max-width:1100px; margin:0 auto; padding:24px 16px 48px; color:var(--text-muted); font-size:.8rem; }
+.view-header h1 { font-size:1.4rem; margin:4px 0 16px; }
+.date-picker { display:flex; align-items:center; gap:10px; background:var(--surface); border:1px solid var(--border); border-radius:var(--radius); padding:10px 14px; margin-bottom:16px; flex-wrap:wrap; }
+.date-nav-btn, .today-btn { background:var(--surface-alt); border:1px solid var(--border); color:var(--text); border-radius:8px; padding:6px 12px; font-size:1rem; cursor:pointer; }
+.date-nav-btn:hover, .today-btn:hover { background:var(--border); }
+.date-picker-current { display:flex; flex-direction:column; gap:2px; flex:1; min-width:160px; }
+.date-heading { font-weight:700; }
+.today-pill { background:var(--accent); color:var(--accent-contrast); font-size:.7rem; font-weight:700; padding:2px 8px; border-radius:999px; margin-left:6px; vertical-align:middle; }
+#date-input { border:1px solid var(--border); background:var(--surface); color:var(--text); border-radius:6px; padding:3px 6px; font-size:.85rem; width:fit-content; }
+.state-block { background:var(--surface); border:1px solid var(--border); border-radius:var(--radius); padding:32px 20px; text-align:center; color:var(--text-muted); }
+.error-block { border-color:var(--live); color:var(--text); }
+.error-title { font-weight:700; color:var(--live); margin:0 0 6px; }
+.error-detail { margin:0 0 6px; }
+.error-hint, .muted { color:var(--text-muted); font-size:.85rem; }
+.small { font-size:.78rem; }
+.spinner { width:28px; height:28px; border-radius:50%; border:3px solid var(--border); border-top-color:var(--accent); margin:0 auto 12px; animation:spin .8s linear infinite; }
+@keyframes spin { to { transform:rotate(360deg); } }
+.game-grid-inner { display:grid; grid-template-columns:repeat(auto-fill,minmax(280px,1fr)); gap:14px; }
+.game-card { display:block; background:var(--surface); border:1px solid var(--border); border-radius:var(--radius); padding:14px; text-decoration:none; color:var(--text); box-shadow:var(--shadow); transition:transform .1s ease, border-color .1s ease; cursor:pointer; }
+.game-card:hover { transform:translateY(-2px); border-color:var(--accent); }
+.game-card.is-live { border-color:var(--live); }
+.game-card-header { display:flex; justify-content:space-between; align-items:center; margin-bottom:10px; font-size:.78rem; }
+.badge { font-weight:700; font-size:.68rem; letter-spacing:.04em; padding:3px 8px; border-radius:999px; }
+.badge-live { background:var(--live); color:#fff; }
+.badge-final { background:var(--final); color:#fff; }
+.badge-upcoming { background:var(--upcoming); color:#fff; }
+.badge-postponed { background:var(--text-muted); color:var(--surface); }
+.badge-upset { background:var(--live); color:#fff; }
+.badge-cover { background:var(--win); color:#fff; }
+.game-status-line { color:var(--text-muted); font-weight:600; }
+.game-card-teams { display:flex; flex-direction:column; gap:8px; }
+.team-row { display:grid; grid-template-columns:1fr auto auto; align-items:center; gap:8px; }
+.team-row-link { display:grid; grid-template-columns:28px 1fr; align-items:center; gap:8px; min-width:0; text-decoration:none; color:inherit; }
+.team-row-link:hover .team-name { text-decoration:underline; }
+.team-logo { width:28px; height:28px; object-fit:contain; border-radius:4px; }
+.team-logo-fallback { display:inline-flex; align-items:center; justify-content:center; background:var(--surface-alt); font-size:.6rem; font-weight:700; color:var(--text-muted); }
+.team-logo-lg { width:48px; height:48px; }
+.team-rank { color:var(--text-muted); font-weight:700; font-size:.75rem; margin-right:4px; }
+.team-name { font-weight:600; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+.team-record { color:var(--text-muted); font-size:.78rem; }
+.team-score { font-weight:700; font-size:1.1rem; min-width:24px; text-align:right; }
+.team-score.is-winner { color:var(--win); }
+.field-position { margin-top:10px; }
+.field-bar { display:flex; align-items:stretch; height:22px; border-radius:5px; overflow:hidden; border:1px solid var(--border); }
+.field-endzone { flex:0 0 30px; display:flex; align-items:center; justify-content:center; background:var(--surface-alt); color:var(--text-muted); font-size:.62rem; font-weight:800; letter-spacing:.02em; }
+.field-track { position:relative; flex:1; background:repeating-linear-gradient(90deg, rgba(120,120,120,.12) 0, rgba(120,120,120,.12) 1px, transparent 1px, transparent 10%); }
+.field-midline { position:absolute; top:0; bottom:0; left:50%; width:1px; background:var(--border); }
+.field-ball { position:absolute; top:50%; transform:translate(-50%,-50%); font-size:.85rem; line-height:1; }
+.field-position.redzone .field-track { background-color:rgba(211,47,47,.14); }
+.field-situation-text { margin-top:4px; font-size:.75rem; color:var(--text-muted); }
+.redzone-tag { display:inline-block; background:var(--live); color:#fff; font-weight:700; font-size:.62rem; text-transform:uppercase; letter-spacing:.03em; padding:1px 6px; border-radius:999px; margin-left:2px; }
+.game-card-meta { margin-top:10px; font-size:.75rem; color:var(--text-muted); }
+.game-card-odds { margin-top:8px; font-size:.75rem; }
+.game-card-odds:empty { display:none; }
+.odds-line { color:var(--text-muted); }
+.covered-tag { display:inline-block; background:#157347; color:#fff; font-weight:700; font-size:.72rem; text-transform:uppercase; letter-spacing:.03em; padding:3px 8px; border-radius:999px; margin-left:4px; }
+.covered-tag.covered-push { background:#52525b; }
+.covered-tag.total-tag { background:#1d4ed8; }
+.covered-tag.total-tag.covered-push { background:#52525b; }
+.covered-tag.not-covered { background:#b91c1c; }
+.covered-tag.injury-tag { background:#b91c1c; text-transform:none; letter-spacing:0; }
+.covered-tag.injury-tag.status-active { background:#52525b; }
+.matchup-odds { margin-top:10px; font-size:.85rem; color:var(--text-muted); display:flex; align-items:center; gap:8px; flex-wrap:wrap; }
+.weather-line { display:inline-flex; align-items:center; gap:4px; }
+.injury-table td { vertical-align:middle; }
+.sa-legend { display:flex; flex-wrap:wrap; gap:14px; font-size:.78rem; color:var(--text-muted); margin-bottom:14px; align-items:center; }
+.sa-legend span { display:inline-flex; align-items:center; gap:5px; }
+.schedule-matrix-table th, .schedule-matrix-table td { text-align:center; white-space:nowrap; }
+.schedule-matrix-table .team-cell { text-align:left; }
+.sa-cell { padding:6px 8px !important; }
+.sa-cell.sa-bye { color:var(--text-muted); font-size:.78rem; }
+.sa-opp { font-weight:600; font-size:.8rem; }
+.sa-opp a.team-link { display:inline; gap:0; }
+.sa-badges { display:flex; justify-content:center; gap:2px; min-height:16px; margin-top:2px; }
+.sa-badge { display:inline-flex; align-items:center; justify-content:center; width:16px; height:16px; border-radius:4px; font-size:.65rem; font-weight:800; color:#fff; background:var(--final); }
+.sa-badge.sa-plus { background:#157347; }
+.sa-badge.sa-minus { background:#b91c1c; }
+.sa-badge.sa-travel { background:#1d4ed8; }
+.sa-badge.sa-tz { background:#7c3aed; }
+.sa-badge.sa-elevation { background:#b45309; }
+.back-link { display:inline-block; margin-bottom:12px; text-decoration:none; color:var(--text-muted); font-weight:600; }
+.matchup-card { background:var(--surface); border:1px solid var(--border); border-radius:var(--radius); padding:18px; margin-bottom:16px; box-shadow:var(--shadow); }
+.matchup-status { display:flex; align-items:center; gap:10px; margin-bottom:12px; font-weight:600; color:var(--text-muted); }
+.matchup-teams { display:flex; align-items:center; justify-content:space-between; gap:16px; flex-wrap:wrap; }
+.matchup-team { display:flex; align-items:center; gap:12px; flex:1; min-width:180px; }
+.matchup-away { justify-content:flex-start; }
+.matchup-home { justify-content:flex-end; text-align:right; }
+.matchup-team-link { display:flex; align-items:center; gap:12px; text-decoration:none; color:inherit; min-width:0; }
+.matchup-team-link:hover .matchup-team-name { text-decoration:underline; }
+.matchup-team-name { font-weight:700; font-size:1.05rem; }
+.matchup-team-record { color:var(--text-muted); font-size:.85rem; }
+.matchup-score { font-size:1.8rem; font-weight:800; min-width:40px; }
+.matchup-score.is-winner { color:var(--win); }
+.matchup-at { color:var(--text-muted); font-weight:700; }
+.matchup-meta { margin-top:12px; color:var(--text-muted); font-size:.82rem; }
+.panel { background:var(--surface); border:1px solid var(--border); border-radius:var(--radius); padding:16px; margin-bottom:16px; }
+.panel h2 { margin-top:0; font-size:1.05rem; }
+table { width:100%; border-collapse:collapse; font-size:.85rem; }
+th, td { padding:6px 8px; text-align:center; border-bottom:1px solid var(--border); white-space:nowrap; }
+.linescore-table th:first-child, .linescore-table td:first-child, .standings-table .team-cell { text-align:left; }
+.linescore-team, .linescore-final { font-weight:700; }
+.team-stats-table td:nth-child(2), .team-stats-table th:nth-child(2) { color:var(--text-muted); font-weight:600; font-size:.8rem; }
+.team-stats-table td.stat-winner { color:var(--win); font-weight:700; }
+.player-category { margin-bottom:18px; }
+.player-category h3 { font-size:.95rem; margin-bottom:8px; }
+.player-category-grid { display:grid; grid-template-columns:repeat(auto-fit,minmax(280px,1fr)); gap:16px; }
+.player-stat-block h4 { margin:0 0 6px; font-size:.85rem; color:var(--text-muted); }
+.player-stats-table, .standings-table { overflow-x:auto; display:block; }
+.scoring-summary-list { margin:0; padding-left:18px; }
+.scoring-summary-list li { margin-bottom:8px; }
+.pbp-list { display:flex; flex-direction:column; gap:8px; }
+.pbp-drive { border:1px solid var(--border); border-radius:8px; padding:8px 12px; }
+.pbp-drive summary { cursor:pointer; font-weight:600; font-size:.88rem; }
+.pbp-drive[open] summary { margin-bottom:8px; }
+.pbp-play-list { list-style:none; margin:0; padding:0; display:flex; flex-direction:column; gap:6px; }
+.pbp-play { display:flex; gap:10px; font-size:.85rem; padding-top:6px; border-top:1px solid var(--border); }
+.pbp-play:first-child { padding-top:0; border-top:none; }
+.pbp-clock { flex:0 0 auto; color:var(--text-muted); font-size:.72rem; font-weight:700; white-space:nowrap; padding-top:1px; }
+.pbp-scoring .pbp-text { font-weight:700; }
+.h2h-summary { font-weight:600; margin:0 0 12px; }
+.scoring-type-tag { display:inline-block; background:var(--surface-alt); color:var(--text-muted); font-size:.68rem; font-weight:700; text-transform:uppercase; letter-spacing:.03em; padding:1px 7px; border-radius:999px; vertical-align:middle; }
+.filter-bar { display:flex; gap:16px; flex-wrap:wrap; margin-bottom:16px; background:var(--surface); border:1px solid var(--border); border-radius:var(--radius); padding:12px 16px; }
+.filter-bar label { display:flex; flex-direction:column; gap:4px; font-size:.78rem; color:var(--text-muted); font-weight:600; }
+.filter-bar select { padding:6px 8px; border-radius:6px; border:1px solid var(--border); background:var(--surface); color:var(--text); font-size:.85rem; }
+.recap-section { margin-bottom:28px; }
+.recap-section h2 { font-size:1.1rem; margin:0 0 6px; }
+.division-heading { margin:18px 0 8px; font-size:.95rem; }
+.division-heading:first-of-type { margin-top:0; }
+.rankings-table .rank-cell { font-weight:700; width:32px; }
+.rankings-table .trend-cell { width:44px; color:var(--text-muted); font-size:.8rem; }
+.trend-up { color:var(--win); }
+.trend-down { color:var(--live); }
+.team-link { display:inline-flex; align-items:center; gap:8px; text-decoration:none; color:inherit; font-weight:600; }
+.team-link:hover { text-decoration:underline; }
+.team-page-header { display:flex; align-items:center; gap:14px; margin-bottom:16px; }
+.team-page-header img, .team-page-header .team-logo-fallback { width:52px; height:52px; }
+.team-page-header h1 { margin:0; font-size:1.4rem; }
+.team-page-header .team-record-line { color:var(--text-muted); font-size:.9rem; }
+.ats-summary { display:flex; gap:18px; flex-wrap:wrap; margin-bottom:16px; }
+.ats-stat { background:var(--surface); border:1px solid var(--border); border-radius:var(--radius); padding:10px 16px; }
+.ats-stat .ats-stat-value { font-size:1.3rem; font-weight:800; }
+.ats-stat .ats-stat-label { font-size:.75rem; color:var(--text-muted); text-transform:uppercase; letter-spacing:.03em; }
+.schedule-table .opp-cell { text-align:left; }
+.schedule-table td, .schedule-table th { white-space:nowrap; }
+.win-text { color:var(--win); font-weight:700; }
+.loss-text { color:var(--live); font-weight:700; }
+.day-leaders-panel { padding:14px 16px; }
+.day-leaders-panel h2 { margin:0; font-size:1rem; }
+.day-leaders-header { display:flex; align-items:center; justify-content:space-between; gap:10px 14px; flex-wrap:wrap; margin-bottom:12px; }
+.leader-tabs { display:flex; gap:6px; }
+.leader-tab-btn { background:var(--surface-alt); border:1px solid var(--border); color:var(--text-muted); border-radius:999px; padding:5px 12px; font-size:.8rem; font-weight:600; cursor:pointer; }
+.leader-tab-btn:hover { color:var(--text); }
+.leader-tab-btn.active { background:var(--accent); border-color:var(--accent); color:var(--accent-contrast); }
+.leader-year-select { padding:5px 8px; border-radius:6px; border:1px solid var(--border); background:var(--surface); color:var(--text); font-size:.8rem; margin-left:auto; }
+.day-leaders-grid { display:grid; grid-template-columns:repeat(auto-fit,minmax(360px,1fr)); gap:14px; }
+.day-leader-card { background:var(--surface-alt); border-radius:8px; padding:14px; }
+.day-leader-card h4 { margin:0 0 8px; font-size:.72rem; text-transform:uppercase; letter-spacing:.04em; color:var(--text-muted); }
+.day-leader-list { list-style:none; margin:0; padding:0 6px 0 0; display:flex; flex-direction:column; gap:10px; max-height:340px; overflow-y:auto; }
+.day-leader-item { display:grid; grid-template-columns:20px 24px minmax(0,1fr) auto; align-items:center; gap:8px 10px; }
+.day-leader-item:not(:last-child) { padding-bottom:10px; border-bottom:1px solid var(--border); }
+.day-leader-rank { color:var(--text-muted); font-weight:700; font-size:.78rem; }
+.day-leader-item .team-logo { width:24px; height:24px; }
+.day-leader-info { min-width:0; }
+.day-leader-name { font-weight:700; white-space:normal; word-break:break-word; line-height:1.3; }
+.day-leader-stat { font-size:.85rem; font-weight:600; text-align:right; white-space:nowrap; }
+.player-link { color:inherit; text-decoration:none; }
+.player-link:hover { text-decoration:underline; }
+.player-category { margin-bottom:16px; }
+.player-category:last-child { margin-bottom:0; }
+.player-category h3 { margin:0 0 8px; font-size:.78rem; text-transform:uppercase; letter-spacing:.04em; color:var(--text-muted); }
+@media (max-width:480px) {
+  .app-header-inner { padding:10px 12px; }
+  .main-nav a { padding:6px 10px; font-size:.85rem; }
+  .matchup-team { min-width:120px; }
+  .matchup-score { font-size:1.4rem; }
+  table { font-size:.78rem; }
+}
+</style>
+</head>
+<body>
+  <header class="app-header">
+    <div class="app-header-inner">
+      <a href="#/scores" class="brand">🏈 CFB Dashboard</a>
+      <div class="team-search" id="team-search">
+        <input type="text" id="team-search-input" class="team-search-input" placeholder="Search teams..." autocomplete="off" aria-label="Search teams" />
+        <div class="team-search-results" id="team-search-results" hidden></div>
+      </div>
+      <nav class="main-nav" id="main-nav">
+        <a href="#/scores" data-route="scores">Scores</a>
+        <a href="#/rankings" data-route="rankings">Rankings</a>
+        <a href="#/standings" data-route="standings">Standings</a>
+        <a href="#/ats" data-route="ats">ATS Leaderboard</a>
+        <a href="#/advantages" data-route="advantages">Schedule Advantages</a>
+        <a href="#/pace" data-route="pace">Team Pace</a>
+        <a href="#/line-movement" data-route="line-movement">Line Movement</a>
+        <a href="#/weekly-recap" data-route="weekly-recap">Weekly Recap</a>
+      </nav>
+    </div>
+  </header>
+
+  <main id="app-root" class="app-root" aria-live="polite"></main>
+
+  <footer class="app-footer">
+    <p>Data via <a href="https://www.espn.com/college-football/" target="_blank" rel="noopener">ESPN</a>'s public college football API.
+    Unofficial fan project, not affiliated with ESPN, the NCAA, or any conference. No sign-up, no API key - just open this file.</p>
+  </footer>
+
+<script>
+(function () {
+  "use strict";
+
+  // ===========================================================================
+  // Everything - data fetching, parsing, and UI - lives in this one file on
+  // purpose, so it's just double-click-and-open. It only talks to ESPN's free
+  // public API (no key, no sign-up). ESPN's API is unofficial/undocumented, so
+  // every parser below reads fields defensively: a missing/renamed field shows
+  // "N/A" or "-" in the UI instead of crashing the page.
+  // ===========================================================================
+
+  var SITE_BASE = "https://site.api.espn.com/apis/site/v2/sports/football/college-football";
+  var STANDINGS_URL = "https://site.api.espn.com/apis/v2/sports/football/college-football/standings";
+  var GROUP_ID = 80; // FBS
+  var MINUTE = 60 * 1000, HOUR = 60 * MINUTE, DAY = 24 * HOUR;
+
+  function currentSeasonYear() {
+    var now = new Date();
+    // college football season runs roughly July -> January; before July, it's
+    // still "last year's" season (bowls/playoffs run into the new year).
+    return now.getMonth() >= 5 ? now.getFullYear() : now.getFullYear() - 1;
+  }
+  var DEFAULT_YEAR = currentSeasonYear();
+
+  var MAJOR_CONFERENCE_ORDER = ["ACC","Big Ten","Big 12","SEC","Pac-12","American Athletic Conference","American Conference","American","Conference USA","Mid-American Conference","Mountain West Conference","Mountain West","Sun Belt Conference","Sun Belt","FBS Independents"];
+  function sortConferences(names) {
+    return names.slice().sort(function (a, b) {
+      var ai = MAJOR_CONFERENCE_ORDER.indexOf(a), bi = MAJOR_CONFERENCE_ORDER.indexOf(b);
+      if (ai === -1 && bi === -1) return a.localeCompare(b);
+      if (ai === -1) return 1;
+      if (bi === -1) return -1;
+      return ai - bi;
+    });
+  }
+
+  // --------------------------------------------------------------------------
+  // Tiny fetch layer: in-memory + localStorage caching (with a TTL) and
+  // in-flight de-duping, so navigating around the app doesn't hammer ESPN or
+  // redo work. Falls back gracefully if localStorage is unavailable (private
+  // browsing, etc).
+  // --------------------------------------------------------------------------
+  var memCache = Object.create(null);
+  var inFlight = Object.create(null);
+  var LS_PREFIX = "cfb-dash:";
+
+  function lsGet(key) {
+    try {
+      var raw = localStorage.getItem(LS_PREFIX + key);
+      if (!raw) return undefined;
+      var parsed = JSON.parse(raw);
+      if (!parsed || Date.now() > parsed.expires) return undefined;
+      return parsed.data;
+    } catch (e) { return undefined; }
+  }
+  function lsSet(key, data, expires) {
+    try { localStorage.setItem(LS_PREFIX + key, JSON.stringify({ data: data, expires: expires })); } catch (e) { /* ignore */ }
+  }
+
+  function ApiError(message, status) {
+    this.name = "ApiError";
+    this.message = message;
+    this.status = status || null;
+  }
+  ApiError.prototype = Object.create(Error.prototype);
+
+  function fetchJson(url, ttlMs) {
+    ttlMs = ttlMs || 30000;
+    var now = Date.now();
+    if (memCache[url] && memCache[url].expires > now) return Promise.resolve(memCache[url].data);
+    var fromDisk = lsGet(url);
+    if (fromDisk !== undefined) {
+      memCache[url] = { expires: now + ttlMs, data: fromDisk };
+      return Promise.resolve(fromDisk);
+    }
+    if (inFlight[url]) return inFlight[url];
+
+    var controller = typeof AbortController !== "undefined" ? new AbortController() : null;
+    var timer = controller ? setTimeout(function () { controller.abort(); }, 15000) : null;
+
+    var p = fetch(url, controller ? { signal: controller.signal } : {})
+      .catch(function (err) {
+        throw new ApiError(err && err.name === "AbortError" ? "Request timed out - ESPN's API might be slow or unreachable." : "Network error - are you online?");
+      })
+      .then(function (res) {
+        if (timer) clearTimeout(timer);
+        if (!res.ok) throw new ApiError("Request failed (HTTP " + res.status + ")", res.status);
+        return res.json().catch(function () { throw new ApiError("Response wasn't valid JSON"); });
+      })
+      .then(function (data) {
+        var expires = Date.now() + ttlMs;
+        memCache[url] = { expires: expires, data: data };
+        lsSet(url, data, expires);
+        delete inFlight[url];
+        return data;
+      })
+      .catch(function (err) {
+        delete inFlight[url];
+        throw err;
+      });
+
+    inFlight[url] = p;
+    return p;
+  }
+
+  // --------------------------------------------------------------------------
+  // ESPN: scoreboard + box score
+  // --------------------------------------------------------------------------
+  function yyyymmdd(date) {
+    var y = date.getFullYear(), m = String(date.getMonth() + 1).padStart(2, "0"), d = String(date.getDate()).padStart(2, "0");
+    return "" + y + m + d;
+  }
+  function safeNum(v, fallback) { var n = Number(v); return isFinite(n) ? n : (fallback === undefined ? 0 : fallback); }
+  function extractCompetitorScore(competitor) {
+    var s = competitor && competitor.score;
+    if (s == null) return null;
+    if (typeof s === "object") return s.value != null ? safeNum(s.value, null) : safeNum(s.displayValue, null);
+    return safeNum(s, null);
+  }
+  function zipLabels(labels, stats) {
+    var out = {};
+    (labels || []).forEach(function (label, i) { out[label] = stats && stats[i] !== undefined ? stats[i] : null; });
+    return out;
+  }
+  function normalizeStatus(statusObj) {
+    var type = (statusObj && statusObj.type) || {};
+    return {
+      state: type.state || "pre",
+      completed: !!type.completed,
+      description: type.description || "Scheduled",
+      detail: type.detail || type.shortDetail || "",
+      shortDetail: type.shortDetail || type.detail || "",
+      period: (statusObj && statusObj.period) || null,
+      displayClock: (statusObj && statusObj.displayClock) || null,
+    };
+  }
+  function normalizeTeamSide(competitor) {
+    var team = (competitor && competitor.team) || {};
+    var records = (competitor && competitor.records) || [];
+    var overall = records.filter(function (r) { return r.type === "total" || r.name === "overall"; })[0];
+    var rank = competitor && competitor.curatedRank && competitor.curatedRank.current;
+    return {
+      id: team.id,
+      name: team.displayName || team.name || "Unknown",
+      shortName: team.shortDisplayName || team.abbreviation || team.name || "UNK",
+      abbreviation: team.abbreviation || "",
+      logo: team.logo || (team.logos && team.logos[0] && team.logos[0].href) || null,
+      conferenceId: team.conferenceId || null,
+      record: (overall && overall.summary) || null,
+      score: extractCompetitorScore(competitor),
+      winner: !!(competitor && competitor.winner),
+      rank: rank && rank <= 25 ? rank : null,
+      linescores: ((competitor && competitor.linescores) || []).map(function (l) { return l.displayValue != null ? l.displayValue : String(l.value || ""); }),
+    };
+  }
+  function findSide(list, homeAway) {
+    for (var i = 0; i < list.length; i++) if (list[i].homeAway === homeAway) return list[i];
+    return null;
+  }
+  function normalizeEvent(event) {
+    var comp = (event.competitions && event.competitions[0]) || {};
+    var competitors = comp.competitors || [];
+    var home = normalizeTeamSide(findSide(competitors, "home") || competitors[0]);
+    var away = normalizeTeamSide(findSide(competitors, "away") || competitors[1]);
+    var broadcasts = comp.broadcasts || [];
+    var names = [];
+    broadcasts.forEach(function (b) { (b.names || []).forEach(function (n) { names.push(n); }); });
+    return {
+      id: event.id,
+      name: event.name || (away.name + " at " + home.name),
+      date: event.date ? new Date(event.date) : null,
+      status: normalizeStatus(comp.status),
+      broadcast: names[0] || event.broadcast || null,
+      venue: comp.venue ? { id: comp.venue.id || null, name: comp.venue.fullName || null, city: comp.venue.address && comp.venue.address.city, state: comp.venue.address && comp.venue.address.state } : null,
+      situation: normalizeSituation(comp.situation),
+      home: home, away: away,
+    };
+  }
+  // ESPN only sends "situation" on live scoreboard/summary competitions -
+  // where the ball currently is, down & distance, whose possession it is.
+  // yardLine is reported relative to the team with the ball (0 = their own
+  // goal line, 100 = the opponent's), which is why the field graphic below
+  // has to know who has possession before it can place the marker.
+  function normalizeSituation(raw) {
+    if (!raw) return null;
+    return {
+      down: raw.down || null,
+      distance: raw.distance != null ? raw.distance : null,
+      yardLine: raw.yardLine != null ? raw.yardLine : null,
+      downDistanceText: raw.shortDownDistanceText || raw.downDistanceText || null,
+      possessionText: raw.possessionText || null,
+      isRedZone: !!raw.isRedZone,
+      possession: raw.possession != null ? String(raw.possession) : null,
+    };
+  }
+  function getScoreboard(date) {
+    var params = "dates=" + yyyymmdd(date) + "&groups=" + GROUP_ID + "&limit=300";
+    return fetchJson(SITE_BASE + "/scoreboard?" + params, 20 * 1000).then(function (raw) {
+      return (raw.events || []).map(normalizeEvent);
+    });
+  }
+
+  // --------------------------------------------------------------------------
+  // ESPN: a single team's full-season schedule, for the Team page. The shape
+  // here is close to the scoreboard's but not identical (score comes back as
+  // {value,displayValue} instead of a plain string, and competitors don't
+  // carry a record/rank) - normalized separately rather than overloading
+  // normalizeTeamSide/normalizeEvent with shape-sniffing.
+  // --------------------------------------------------------------------------
+  function normalizeScheduleTeamSide(competitor) {
+    var team = (competitor && competitor.team) || {};
+    return {
+      id: team.id,
+      name: team.displayName || team.name || "Unknown",
+      shortName: team.shortDisplayName || team.abbreviation || team.name || "UNK",
+      abbreviation: team.abbreviation || "",
+      logo: team.logo || (team.logos && team.logos[0] && team.logos[0].href) || null,
+      score: extractCompetitorScore(competitor),
+      winner: !!(competitor && competitor.winner),
+      record: null,
+      rank: null,
+    };
+  }
+  function normalizeScheduleEvent(event) {
+    var comp = (event.competitions && event.competitions[0]) || {};
+    var competitors = comp.competitors || [];
+    var home = normalizeScheduleTeamSide(findSide(competitors, "home") || competitors[0]);
+    var away = normalizeScheduleTeamSide(findSide(competitors, "away") || competitors[1]);
+    return {
+      id: event.id,
+      week: (event.week && (event.week.number || event.week.text)) || null,
+      date: event.date ? new Date(event.date) : null,
+      status: normalizeStatus(comp.status),
+      venue: comp.venue ? { name: comp.venue.fullName || null, city: comp.venue.address && comp.venue.address.city, state: comp.venue.address && comp.venue.address.state } : null,
+      home: home, away: away,
+    };
+  }
+  function getTeamSchedule(teamId, year) {
+    var url = SITE_BASE + "/teams/" + encodeURIComponent(teamId) + "/schedule?season=" + year;
+    return fetchJson(url, HOUR).then(function (raw) {
+      var t = raw.team || {};
+      return {
+        team: t.id ? { id: t.id, name: t.displayName || t.name, logo: t.logo || (t.logos && t.logos[0] && t.logos[0].href) || null, record: t.recordSummary || null } : null,
+        games: (raw.events || []).map(normalizeScheduleEvent),
+      };
+    });
+  }
+
+  // --------------------------------------------------------------------------
+  // ESPN: team injury report, for the Team page. This comes bundled into the
+  // full roster response (each athlete carries a "status" and an "injuries"
+  // array) rather than a separate feed - and ESPN tracks college injuries far
+  // more sparsely than the pros, so an empty result here is normal and just
+  // means nothing has been reported, not that the fetch failed.
+  // --------------------------------------------------------------------------
+  function getTeamInjuries(teamId) {
+    var url = SITE_BASE + "/teams/" + encodeURIComponent(teamId) + "/roster";
+    return fetchJson(url, HOUR).then(function (raw) {
+      var out = [];
+      (raw.athletes || []).forEach(function (group) {
+        (group.items || []).forEach(function (a) {
+          var statusType = a.status && a.status.type;
+          var injuries = Array.isArray(a.injuries) ? a.injuries : [];
+          if (!injuries.length && (!statusType || statusType === "active")) return; // healthy - skip
+          var latest = injuries.length ? injuries[injuries.length - 1] : null;
+          out.push({
+            name: a.displayName || a.fullName || "Unknown",
+            position: a.position && a.position.abbreviation,
+            status: (latest && latest.status) || (a.status && a.status.name) || "Questionable",
+            date: (latest && latest.date) || null,
+          });
+        });
+      });
+      return out;
+    });
+  }
+
+  // --------------------------------------------------------------------------
+  // ESPN: the current AP Top 25 poll.
+  // --------------------------------------------------------------------------
+  function getApPoll() {
+    return fetchJson(SITE_BASE + "/rankings", HOUR).then(function (raw) {
+      var polls = raw.rankings || [];
+      var ap = polls.filter(function (p) { return p.type === "ap" || /AP Top 25/i.test(p.name || ""); })[0] || polls[0];
+      if (!ap) return null;
+      var ranks = (ap.ranks || []).map(function (r) {
+        var team = r.team || {};
+        return {
+          current: r.current, previous: r.previous || null, trend: r.trend || null,
+          points: r.points != null ? r.points : null, firstPlaceVotes: r.firstPlaceVotes || 0,
+          record: r.recordSummary || null,
+          team: {
+            id: team.id, name: team.displayName || team.name || "Unknown",
+            shortName: team.shortDisplayName || team.abbreviation || team.name || "UNK",
+            logo: team.logo || (team.logos && team.logos[0] && team.logos[0].href) || null,
+          },
+        };
+      });
+      return { name: ap.name || "AP Top 25", week: (ap.occurrence && ap.occurrence.displayValue) || null, ranks: ranks };
+    });
+  }
+
+  // --------------------------------------------------------------------------
+  // ESPN: betting odds. The scoreboard/summary endpoints only carry odds while
+  // a game is upcoming - they drop the line once it's final. The core API's
+  // per-event odds resource keeps it around indefinitely, so that's what both
+  // the spread display and the "who covered" check are built on.
+  // --------------------------------------------------------------------------
+  var CORE_EVENT_BASE = "https://sports.core.api.espn.com/v2/sports/football/leagues/college-football/events/";
+  function getGameOdds(eventId) {
+    var url = CORE_EVENT_BASE + encodeURIComponent(eventId) + "/competitions/" + encodeURIComponent(eventId) + "/odds";
+    return fetchJson(url, 3 * HOUR).then(function (raw) {
+      var items = raw.items || [];
+      if (!items.length) return null;
+      var o = items[0]; // first listed provider - good enough for a single displayed line
+      var spread = safeNum(o.spread, null);
+      if (spread == null || !o.homeTeamOdds || !o.awayTeamOdds) return null;
+      return {
+        overUnder: o.overUnder != null ? o.overUnder : null,
+        homeFavorite: !!o.homeTeamOdds.favorite,
+        awayFavorite: !!o.awayTeamOdds.favorite,
+        spread: Math.abs(spread),
+      };
+    }).catch(function () { return null; });
+  }
+  // Compares the final score to the spread ourselves - ESPN's own
+  // "spreadWinner" flag on this endpoint doesn't reliably track the actual
+  // final-score outcome, so ATS coverage is computed straight from the score.
+  function spreadCoverage(odds, game) {
+    if (!odds || !game.status.completed || game.home.score == null || game.away.score == null) return null;
+    var margin = game.home.score - game.away.score; // + = home won by this much
+    var favSide = odds.homeFavorite ? "home" : (odds.awayFavorite ? "away" : null);
+    if (!favSide || !odds.spread) return margin === 0 ? "push" : (margin > 0 ? "home" : "away");
+    var favMargin = favSide === "home" ? margin : -margin;
+    var diff = favMargin - odds.spread;
+    if (diff === 0) return "push";
+    return diff > 0 ? favSide : (favSide === "home" ? "away" : "home");
+  }
+  function totalResult(odds, game) {
+    if (!odds || odds.overUnder == null || !game.status.completed || game.home.score == null || game.away.score == null) return null;
+    var total = game.home.score + game.away.score;
+    if (total === odds.overUnder) return "push";
+    return total > odds.overUnder ? "over" : "under";
+  }
+  function oddsFavoriteName(odds, game) {
+    if (odds.homeFavorite) return game.home.shortName || game.home.name;
+    if (odds.awayFavorite) return game.away.shortName || game.away.name;
+    return null;
+  }
+  function oddsLineText(odds, game) {
+    var fav = oddsFavoriteName(odds, game);
+    var line = fav && odds.spread ? fav + " -" + odds.spread : "Pick'em";
+    return line + (odds.overUnder != null ? " · O/U " + odds.overUnder : "");
+  }
+
+  // --------------------------------------------------------------------------
+  // Line movement: how far a game's point spread has moved from ESPN's
+  // first-listed sportsbook's OPENING number to its latest one. Same odds
+  // resource as getGameOdds above, but that function only keeps the current
+  // top-level spread - this reads the "open"/"current" pointSpread nested
+  // inside homeTeamOdds instead, which ESPN already reports signed from the
+  // HOME team's own perspective (e.g. "+3.5" when home is getting points,
+  // "-7" when home is favored). Diffing those two signed numbers gives the
+  // true point swing even when the favorite flips sides mid-week (home -3 at
+  // open, away -1 now nets out to a real 4-point move, not just "looks like
+  // a smaller number"). The over/under's open/current is read the same way
+  // for a secondary "total moved too" figure.
+  // --------------------------------------------------------------------------
+  function signedPointSpread(block) {
+    if (!block || !block.pointSpread) return null;
+    var n = Number(block.pointSpread.american);
+    return isFinite(n) ? n : null;
+  }
+  function getLineMovement(eventId, finalHint) {
+    var url = CORE_EVENT_BASE + encodeURIComponent(eventId) + "/competitions/" + encodeURIComponent(eventId) + "/odds";
+    var ttl = finalHint ? 6 * HOUR : 5 * 60 * 1000; // lines drift over hours/days, not seconds - no need to poll as fast as live scores
+    return fetchJson(url, ttl).then(function (raw) {
+      var items = raw.items || [];
+      if (!items.length) return null;
+      var o = items[0];
+      if (!o.homeTeamOdds) return null;
+      var openSpread = signedPointSpread(o.homeTeamOdds.open);
+      var currentSpread = signedPointSpread(o.homeTeamOdds.current);
+      if (openSpread == null || currentSpread == null) return null;
+      var openTotal = o.open && o.open.total && o.open.total.american != null ? safeNum(o.open.total.american, null) : null;
+      var currentTotal = o.current && o.current.total && o.current.total.american != null ? safeNum(o.current.total.american, null) : null;
+      return {
+        openSpread: openSpread, currentSpread: currentSpread, spreadMove: Number((currentSpread - openSpread).toFixed(1)),
+        openTotal: openTotal, currentTotal: currentTotal, totalMove: (openTotal != null && currentTotal != null) ? Number((currentTotal - openTotal).toFixed(1)) : null,
+      };
+    }).catch(function () { return null; });
+  }
+  // A signed home-perspective spread into "Team -N" / "Team +N" / "Pick'em".
+  function signedSpreadLabel(game, signed) {
+    if (signed == null) return "-";
+    if (signed === 0) return "Pick'em";
+    var favSide = signed < 0 ? game.home : game.away; // whichever side is favored is always shown with "-"
+    return (favSide.shortName || favSide.name) + " -" + Math.abs(signed);
+  }
+  // Which team the move actually benefited - the signed home spread going UP
+  // means home is getting more points (the market soured on home), so the
+  // move favors away, and vice versa.
+  function lineMoveDirectionLabel(game, spreadMove) {
+    if (!spreadMove) return "";
+    var towardTeam = spreadMove > 0 ? game.away : game.home;
+    return "toward " + (towardTeam.shortName || towardTeam.name);
+  }
+  function computeLineMovements(games) {
+    return Promise.all(games.map(function (g) {
+      return getLineMovement(g.id, g.status.completed).then(function (lm) { return lm ? Object.assign({ game: g }, lm) : null; });
+    })).then(function (results) {
+      return results.filter(Boolean).sort(function (a, b) { return Math.abs(b.spreadMove) - Math.abs(a.spreadMove); });
+    });
+  }
+  function lineMovementRowHtml(rank, entry) {
+    var g = entry.game;
+    var matchup = teamLinkHtml(g.away.id, g.away.shortName || g.away.name) + ' <span class="muted">@</span> ' + teamLinkHtml(g.home.id, g.home.shortName || g.home.name);
+    var moveText = (entry.spreadMove > 0 ? "+" : "") + entry.spreadMove.toFixed(1) + " pts";
+    var dirText = lineMoveDirectionLabel(g, entry.spreadMove);
+    var totalCell = entry.totalMove == null ? "-" : entry.openTotal + " &rarr; " + entry.currentTotal + (entry.totalMove ? ' <span class="muted small">(' + (entry.totalMove > 0 ? "+" : "") + entry.totalMove.toFixed(1) + ")</span>" : "");
+    return "<tr><td>" + rank + "</td><td>" + gameCellLinkHtml(g, matchup) + "</td><td>" + escapeHtml(signedSpreadLabel(g, entry.openSpread)) + "</td><td>" + escapeHtml(signedSpreadLabel(g, entry.currentSpread)) + "</td>" +
+      '<td class="line-move-cell"><strong>' + escapeHtml(moveText) + "</strong>" + (dirText ? ' <span class="muted small">' + escapeHtml(dirText) + "</span>" : "") + "</td>" +
+      "<td>" + totalCell + "</td></tr>";
+  }
+  function gameCellLinkHtml(g, matchup) {
+    return '<a class="team-link" href="#/game/' + encodeURIComponent(g.id) + '">' + matchup + "</a>";
+  }
+  function lineMovementTableHtml(entries, limit) {
+    if (!entries.length) return '<p class="muted">No games with both an opening and current line were found for this window.</p>';
+    var head = "<thead><tr><th>#</th><th>Game</th><th>Opened</th><th>Now</th><th>Spread Move</th><th>O/U Move</th></tr></thead>";
+    return '<table class="standings-table line-movement-table">' + head + "<tbody>" + entries.slice(0, limit).map(function (e, i) { return lineMovementRowHtml(i + 1, e); }).join("") + "</tbody></table>";
+  }
+  function lineMovementView(root) {
+    setActiveNav("line-movement");
+    root.innerHTML =
+      '<section class="view-header"><h1>Line Movement</h1><p class="muted small">The point spreads that have moved the most from ESPN\'s first-listed sportsbook\'s opening number to its latest one, across this week\'s games (roughly three days back through four days ahead). A game needs both an opening and a current line on file to be ranked here.</p></section>' +
+      '<div id="line-movement-slot">' + loadingHtml("Loading this week's games...") + "</div>";
+    var slot = root.querySelector("#line-movement-slot");
+    var days = [];
+    for (var i = -3; i <= 3; i++) days.push(addDays(new Date(), i));
+    return Promise.all(days.map(function (d) { return getScoreboard(d).catch(function () { return []; }); })).then(function (lists) {
+      var seen = {}, games = [];
+      lists.forEach(function (list) { list.forEach(function (g) { if (!seen[g.id]) { seen[g.id] = true; games.push(g); } }); });
+      if (!games.length) { slot.innerHTML = emptyHtml("No games found for this window."); return; }
+      slot.innerHTML = loadingHtml("Reading opening and current lines for " + games.length + " games...");
+      return computeLineMovements(games).then(function (entries) {
+        slot.innerHTML = lineMovementTableHtml(entries, 10);
+      });
+    }).catch(function (err) { slot.innerHTML = errorHtml(err); });
+  }
+
+  // --------------------------------------------------------------------------
+  // Weather for outdoor games. ESPN's free API doesn't expose game-day weather
+  // anywhere (checked both the college football and NFL summary endpoints for
+  // real games - no "weather" field exists in either). So this pulls from
+  // Open-Meteo instead, a free, keyless weather API: look up whether the venue
+  // is indoor via ESPN's core API (skip weather entirely if so), geocode the
+  // venue's city/state to a lat/lon, then fetch an hourly forecast and pick
+  // out the hour closest to kickoff. Fails silently (returns null) at every
+  // step - this is a nice-to-have, not core functionality.
+  // --------------------------------------------------------------------------
+  var CORE_VENUE_BASE = "https://sports.core.api.espn.com/v2/sports/football/leagues/college-football/venues/";
+  function getVenueInfo(venueId) {
+    return fetchJson(CORE_VENUE_BASE + encodeURIComponent(venueId), 30 * DAY)
+      .then(function (raw) { return { indoor: !!raw.indoor }; })
+      .catch(function () { return null; });
+  }
+  var US_STATE_NAMES = {
+    AL: "Alabama", AK: "Alaska", AZ: "Arizona", AR: "Arkansas", CA: "California", CO: "Colorado",
+    CT: "Connecticut", DE: "Delaware", DC: "District of Columbia", FL: "Florida", GA: "Georgia",
+    HI: "Hawaii", ID: "Idaho", IL: "Illinois", IN: "Indiana", IA: "Iowa", KS: "Kansas", KY: "Kentucky",
+    LA: "Louisiana", ME: "Maine", MD: "Maryland", MA: "Massachusetts", MI: "Michigan", MN: "Minnesota",
+    MS: "Mississippi", MO: "Missouri", MT: "Montana", NE: "Nebraska", NV: "Nevada", NH: "New Hampshire",
+    NJ: "New Jersey", NM: "New Mexico", NY: "New York", NC: "North Carolina", ND: "North Dakota",
+    OH: "Ohio", OK: "Oklahoma", OR: "Oregon", PA: "Pennsylvania", RI: "Rhode Island", SC: "South Carolina",
+    SD: "South Dakota", TN: "Tennessee", TX: "Texas", UT: "Utah", VT: "Vermont", VA: "Virginia",
+    WA: "Washington", WV: "West Virginia", WI: "Wisconsin", WY: "Wyoming",
+  };
+  function geocodeCity(city, state) {
+    var url = "https://geocoding-api.open-meteo.com/v1/search?name=" + encodeURIComponent(city) + "&count=10&language=en&format=json";
+    return fetchJson(url, 30 * DAY).then(function (raw) {
+      var results = raw.results || [];
+      if (!results.length) return null;
+      var stateName = US_STATE_NAMES[String(state || "").toUpperCase()];
+      var match = stateName ? results.filter(function (r) { return r.country_code === "US" && r.admin1 === stateName; })[0] : null;
+      return match || results[0];
+    }).catch(function () { return null; });
+  }
+  function getWeatherForecast(lat, lon) {
+    var url = "https://api.open-meteo.com/v1/forecast?latitude=" + lat + "&longitude=" + lon +
+      "&hourly=temperature_2m,precipitation_probability,weather_code&temperature_unit=fahrenheit&timezone=auto&forecast_days=16&past_days=2";
+    return fetchJson(url, HOUR).catch(function () { return null; });
+  }
+  // Open-Meteo's hourly.time entries are local wall-clock strings in the
+  // venue's own timezone ("2026-09-12T15:00"), so the kickoff Date has to be
+  // formatted into that same timezone before it can be matched up.
+  function findHourlyIndex(hourly, gameDate, timezone) {
+    if (!hourly || !hourly.time || !hourly.time.length) return -1;
+    try {
+      var parts = new Intl.DateTimeFormat("en-CA", { timeZone: timezone, year: "numeric", month: "2-digit", day: "2-digit", hour: "2-digit", hourCycle: "h23" }).formatToParts(gameDate);
+      var map = {};
+      parts.forEach(function (p) { map[p.type] = p.value; });
+      var hour = map.hour === "24" ? "00" : map.hour;
+      var label = map.year + "-" + map.month + "-" + map.day + "T" + hour + ":00";
+      return hourly.time.indexOf(label);
+    } catch (e) { return -1; }
+  }
+  var WMO_WEATHER_LABEL = {
+    0: "Clear", 1: "Mostly Clear", 2: "Partly Cloudy", 3: "Overcast", 45: "Fog", 48: "Fog",
+    51: "Light Drizzle", 53: "Drizzle", 55: "Heavy Drizzle", 61: "Light Rain", 63: "Rain", 65: "Heavy Rain",
+    71: "Light Snow", 73: "Snow", 75: "Heavy Snow", 80: "Rain Showers", 81: "Rain Showers", 82: "Violent Showers",
+    95: "Thunderstorm", 96: "Thunderstorm", 99: "Thunderstorm",
+  };
+  var WMO_WEATHER_ICON = {
+    0: "☀️", 1: "🌤", 2: "⛅", 3: "☁️", 45: "🌫", 48: "🌫",
+    51: "🌦", 53: "🌦", 55: "🌧", 61: "🌦", 63: "🌧", 65: "🌧",
+    71: "🌨", 73: "🌨", 75: "❄️", 80: "🌦", 81: "🌧", 82: "⛈",
+    95: "⛈", 96: "⛈", 99: "⛈",
+  };
+  function getGameWeather(game) {
+    if (!game.venue || !game.venue.id || !game.venue.city || !game.date) return Promise.resolve(null);
+    return getVenueInfo(game.venue.id).then(function (venueInfo) {
+      if (venueInfo && venueInfo.indoor) return null;
+      return geocodeCity(game.venue.city, game.venue.state).then(function (loc) {
+        if (!loc) return null;
+        return getWeatherForecast(loc.latitude, loc.longitude).then(function (fc) {
+          var hourly = fc && fc.hourly;
+          if (!hourly || !fc.timezone) return null;
+          var idx = findHourlyIndex(hourly, game.date, fc.timezone);
+          if (idx === -1 || hourly.temperature_2m[idx] == null) return null;
+          return {
+            tempF: Math.round(hourly.temperature_2m[idx]),
+            precipProb: hourly.precipitation_probability ? hourly.precipitation_probability[idx] : null,
+            code: hourly.weather_code ? hourly.weather_code[idx] : null,
+          };
+        });
+      });
+    }).catch(function () { return null; });
+  }
+  function weatherLineHtml(weather) {
+    if (!weather) return "";
+    var icon = WMO_WEATHER_ICON[weather.code] || "🌡";
+    var label = WMO_WEATHER_LABEL[weather.code] || "";
+    var precip = weather.precipProb != null && weather.precipProb >= 20 ? ", " + weather.precipProb + "% precip" : "";
+    return '<span class="weather-line">' + icon + " " + weather.tempF + "°F" + (label ? " " + escapeHtml(label) : "") + escapeHtml(precip) + "</span>";
+  }
+
+  // --------------------------------------------------------------------------
+  // Weekly Recap: three small "fun stats" ranked across the same weekly game
+  // window used elsewhere (roughly three days back through four days ahead) -
+  // Upset Alert / Chaos Meter, Biggest Comeback of the Week, and Weirdest
+  // Weather Games. Each is computed honestly from data ESPN/Open-Meteo already
+  // expose; nothing here is a proprietary rating.
+  // --------------------------------------------------------------------------
+
+  // Upset Alert / Chaos Meter: which underdogs beat the spread by the widest
+  // margin this week, using the same current-odds resource as getGameOdds.
+  // dogCoverMargin > 0 means the underdog covered (or won outright); games
+  // where the favorite covered are excluded entirely rather than ranked low,
+  // since "chalk held" isn't a chaos story.
+  function computeUpsets(completedGames) {
+    return Promise.all(completedGames.map(function (g) {
+      return getGameOdds(g.id).then(function (odds) {
+        if (!odds || !odds.spread || (!odds.homeFavorite && !odds.awayFavorite)) return null;
+        var favSide = odds.homeFavorite ? "home" : "away";
+        var dogSide = favSide === "home" ? "away" : "home";
+        var margin = g.home.score - g.away.score; // + = home won by this much
+        var favMargin = favSide === "home" ? margin : -margin; // + = favorite won by this much, - = favorite lost outright
+        var dogCoverMargin = Number((odds.spread - favMargin).toFixed(1)); // + = underdog beat the spread by this many points
+        if (dogCoverMargin <= 0) return null;
+        return { game: g, odds: odds, favSide: favSide, dogSide: dogSide, favMargin: favMargin, dogCoverMargin: dogCoverMargin, outright: favMargin < 0 };
+      }).catch(function () { return null; });
+    })).then(function (results) {
+      return results.filter(Boolean).sort(function (a, b) { return b.dogCoverMargin - a.dogCoverMargin; });
+    });
+  }
+  function upsetRowHtml(rank, entry) {
+    var g = entry.game;
+    var fav = g[entry.favSide], dog = g[entry.dogSide];
+    var matchup = teamLinkHtml(g.away.id, g.away.shortName || g.away.name) + ' <span class="muted">@</span> ' + teamLinkHtml(g.home.id, g.home.shortName || g.home.name);
+    var scoreText = g.away.score + "-" + g.home.score;
+    var tag = entry.outright ? '<span class="badge badge-upset">UPSET</span>' : '<span class="badge badge-cover">COVERED</span>';
+    var resultText = (dog.shortName || dog.name) + (entry.outright ? " won outright" : " covered") + " by " + entry.dogCoverMargin.toFixed(1) + " pts";
+    return "<tr><td>" + rank + "</td><td>" + gameCellLinkHtml(g, matchup) + "</td><td>" + scoreText + "</td><td>" + escapeHtml((fav.shortName || fav.name) + " -" + entry.odds.spread) + "</td>" +
+      "<td>" + tag + " <span class=\"small\">" + escapeHtml(resultText) + "</span></td></tr>";
+  }
+  function upsetTableHtml(entries, limit) {
+    if (!entries.length) return emptyHtml("No underdogs beat the spread this week (or no odds were on file for these games).");
+    var head = "<thead><tr><th>#</th><th>Game</th><th>Score</th><th>Spread</th><th>Result</th></tr></thead>";
+    return '<table class="standings-table upset-table">' + head + "<tbody>" + entries.slice(0, limit).map(function (e, i) { return upsetRowHtml(i + 1, e); }).join("") + "</tbody></table>";
+  }
+
+  // Biggest Comeback of the Week: uses the per-quarter linescores ESPN already
+  // sends on the bulk scoreboard endpoint (confirmed non-empty for completed
+  // games), so this needs no extra per-game fetch. Tracks each team's largest
+  // deficit measured at the end of any quarter and flags a comeback when the
+  // team that faced the bigger deficit ultimately won - ranked by deficit
+  // size. A deficit that opened and closed again within a single quarter
+  // won't be caught, since this only checks end-of-quarter running totals.
+  function computeComebacks(completedGames) {
+    var results = completedGames.map(function (g) {
+      var winnerSide = g.home.winner ? "home" : (g.away.winner ? "away" : null);
+      if (!winnerSide) return null;
+      var loserSide = winnerSide === "home" ? "away" : "home";
+      var winLines = g[winnerSide].linescores, loseLines = g[loserSide].linescores;
+      var n = Math.min(winLines.length, loseLines.length);
+      if (n < 2) return null; // need at least two quarters on file to show a mid-game deficit
+      var winCum = 0, loseCum = 0, maxDeficit = 0;
+      for (var i = 0; i < n; i++) {
+        winCum += safeNum(winLines[i], 0);
+        loseCum += safeNum(loseLines[i], 0);
+        var deficit = loseCum - winCum; // + = the eventual winner was behind by this much at this point
+        if (deficit > maxDeficit) maxDeficit = deficit;
+      }
+      if (maxDeficit <= 0) return null; // never trailed - not a comeback
+      return { game: g, winnerSide: winnerSide, loserSide: loserSide, maxDeficit: maxDeficit };
+    }).filter(Boolean);
+    return results.sort(function (a, b) { return b.maxDeficit - a.maxDeficit; });
+  }
+  function comebackRowHtml(rank, entry) {
+    var g = entry.game;
+    var winner = g[entry.winnerSide];
+    var matchup = teamLinkHtml(g.away.id, g.away.shortName || g.away.name) + ' <span class="muted">@</span> ' + teamLinkHtml(g.home.id, g.home.shortName || g.home.name);
+    var scoreText = g.away.score + "-" + g.home.score;
+    return "<tr><td>" + rank + "</td><td>" + gameCellLinkHtml(g, matchup) + "</td><td>" + scoreText + "</td>" +
+      "<td>" + escapeHtml(winner.shortName || winner.name) + " trailed by " + entry.maxDeficit + "</td></tr>";
+  }
+  function comebackTableHtml(entries, limit) {
+    if (!entries.length) return emptyHtml("No team came back from a quarter-end deficit to win this week.");
+    var head = "<thead><tr><th>#</th><th>Game</th><th>Final</th><th>Comeback</th></tr></thead>";
+    return '<table class="standings-table comeback-table">' + head + "<tbody>" + entries.slice(0, limit).map(function (e, i) { return comebackRowHtml(i + 1, e); }).join("") + "</tbody></table>";
+  }
+
+  // Weirdest Weather Games: reuses getGameWeather across the week's games and
+  // ranks by a simple extremity score - very cold or very hot temperatures,
+  // high precipitation odds, and severe conditions (heavy rain/snow,
+  // thunderstorms) all add points. Indoor games and games missing venue/city
+  // data are skipped by getGameWeather itself (returns null).
+  function weatherWeirdScore(w) {
+    var score = 0;
+    if (w.tempF <= 20) score += 32 - w.tempF;
+    else if (w.tempF >= 95) score += w.tempF - 90;
+    if (w.precipProb != null && w.precipProb >= 50) score += w.precipProb / 5;
+    if (w.code != null && [65, 75, 82, 95, 96, 99].indexOf(w.code) !== -1) score += 15;
+    else if (w.code != null && [55, 61, 63, 71, 73].indexOf(w.code) !== -1) score += 6;
+    return score;
+  }
+  function computeWeirdWeather(games) {
+    return Promise.all(games.map(function (g) {
+      return getGameWeather(g).then(function (w) { return w ? { game: g, weather: w } : null; }).catch(function () { return null; });
+    })).then(function (results) {
+      var list = results.filter(Boolean);
+      list.forEach(function (e) { e.weirdScore = weatherWeirdScore(e.weather); });
+      return list.filter(function (e) { return e.weirdScore > 0; }).sort(function (a, b) { return b.weirdScore - a.weirdScore; });
+    });
+  }
+  function weatherRowHtml(rank, entry) {
+    var g = entry.game;
+    var matchup = teamLinkHtml(g.away.id, g.away.shortName || g.away.name) + ' <span class="muted">@</span> ' + teamLinkHtml(g.home.id, g.home.shortName || g.home.name);
+    var venueText = g.venue && g.venue.name ? g.venue.name : "-";
+    return "<tr><td>" + rank + "</td><td>" + gameCellLinkHtml(g, matchup) + "</td><td>" + escapeHtml(venueText) + "</td><td>" + weatherLineHtml(entry.weather) + "</td></tr>";
+  }
+  function weatherTableHtml(entries, limit) {
+    if (!entries.length) return emptyHtml("No notably wild weather found for this week's outdoor games.");
+    var head = "<thead><tr><th>#</th><th>Game</th><th>Venue</th><th>Forecast</th></tr></thead>";
+    return '<table class="standings-table weather-table">' + head + "<tbody>" + entries.slice(0, limit).map(function (e, i) { return weatherRowHtml(i + 1, e); }).join("") + "</tbody></table>";
+  }
+
+  function weeklyRecapView(root) {
+    setActiveNav("weekly-recap");
+    root.innerHTML =
+      '<section class="view-header"><h1>Weekly Recap</h1><p class="muted small">Upsets, comebacks, and wild weather from this week\'s games (roughly three days back through four days ahead).</p></section>' +
+      '<section class="recap-section"><h2>Upset Alert / Chaos Meter</h2><p class="muted small">Underdogs that beat the spread this week, ranked by how many points they covered by. Needs a completed game with both a final score and a pre-game spread on file.</p><div id="upset-slot">' + loadingHtml("Loading this week's games...") + "</div></section>" +
+      '<section class="recap-section"><h2>Biggest Comeback of the Week</h2><p class="muted small">The largest deficit a team overcame to win, measured at the end of any quarter - a bigger deficit that closed before the quarter ended won\'t be caught.</p><div id="comeback-slot">' + loadingHtml("Loading...") + "</div></section>" +
+      '<section class="recap-section"><h2>Weirdest Weather Games</h2><p class="muted small">Outdoor games with the most extreme forecast conditions near kickoff.</p><div id="weather-slot">' + loadingHtml("Loading...") + "</div></section>";
+
+    var upsetSlot = root.querySelector("#upset-slot");
+    var comebackSlot = root.querySelector("#comeback-slot");
+    var weatherSlot = root.querySelector("#weather-slot");
+
+    var days = [];
+    for (var i = -3; i <= 3; i++) days.push(addDays(new Date(), i));
+    return Promise.all(days.map(function (d) { return getScoreboard(d).catch(function () { return []; }); })).then(function (lists) {
+      var seen = {}, games = [];
+      lists.forEach(function (list) { list.forEach(function (g) { if (!seen[g.id]) { seen[g.id] = true; games.push(g); } }); });
+      if (!games.length) {
+        var msg = emptyHtml("No games found for this window.");
+        upsetSlot.innerHTML = msg; comebackSlot.innerHTML = msg; weatherSlot.innerHTML = msg;
+        return;
+      }
+      var completed = games.filter(function (g) { return g.status.completed && g.home.score != null && g.away.score != null; });
+
+      // Comebacks are computed straight from data already on `games` - no extra fetch.
+      comebackSlot.innerHTML = comebackTableHtml(computeComebacks(completed), 10);
+
+      upsetSlot.innerHTML = loadingHtml("Checking spreads for " + completed.length + " completed games...");
+      var upsetPromise = computeUpsets(completed).then(function (entries) {
+        upsetSlot.innerHTML = upsetTableHtml(entries, 10);
+      }).catch(function (err) { upsetSlot.innerHTML = errorHtml(err); });
+
+      weatherSlot.innerHTML = loadingHtml("Checking forecasts for " + games.length + " games...");
+      var weatherPromise = computeWeirdWeather(games).then(function (entries) {
+        weatherSlot.innerHTML = weatherTableHtml(entries, 10);
+      }).catch(function (err) { weatherSlot.innerHTML = errorHtml(err); });
+
+      return Promise.all([upsetPromise, weatherPromise]);
+    }).catch(function (err) { upsetSlot.innerHTML = errorHtml(err); comebackSlot.innerHTML = errorHtml(err); weatherSlot.innerHTML = errorHtml(err); });
+  }
+
+  // A couple of small geo helpers shared by weather and the schedule
+  // advantages matrix below - great-circle distance between two venues, and
+  // a timezone's UTC offset on a specific date (has to be date-specific
+  // because of daylight saving).
+  function haversineMiles(lat1, lon1, lat2, lon2) {
+    var R = 3958.8; // Earth radius in miles
+    var toRad = function (d) { return (d * Math.PI) / 180; };
+    var dLat = toRad(lat2 - lat1), dLon = toRad(lon2 - lon1);
+    var a = Math.sin(dLat / 2) * Math.sin(dLat / 2) + Math.cos(toRad(lat1)) * Math.cos(toRad(lat2)) * Math.sin(dLon / 2) * Math.sin(dLon / 2);
+    return R * (2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a)));
+  }
+  function utcOffsetMinutes(timezone, date) {
+    try {
+      var parts = new Intl.DateTimeFormat("en-US", { timeZone: timezone, timeZoneName: "shortOffset" }).formatToParts(date);
+      var tzPart = parts.filter(function (p) { return p.type === "timeZoneName"; })[0];
+      var m = /GMT([+-]\d+)(?::(\d+))?/.exec((tzPart && tzPart.value) || "");
+      if (!m) return null;
+      var hours = parseInt(m[1], 10), mins = m[2] ? parseInt(m[2], 10) : 0;
+      return hours * 60 + (hours < 0 ? -mins : mins);
+    } catch (e) { return null; }
+  }
+
+  function normalizeAthleteRow(category, labelMap, athlete) {
+    var a = athlete.athlete || {};
+    var base = { id: a.id || null, name: a.displayName || a.shortName || [a.firstName, a.lastName].filter(Boolean).join(" ") || "Unknown", position: a.position && a.position.abbreviation };
+    if (category === "passing") {
+      var parts = String(labelMap["C/ATT"] || "0/0").split("/").map(Number);
+      var completions = parts[0] || 0, attempts = parts[1] || 0;
+      return Object.assign(base, { completions: completions, attempts: attempts, yards: safeNum(labelMap.YDS), touchdowns: safeNum(labelMap.TD), interceptions: safeNum(labelMap.INT), completionPct: attempts ? Number(((completions / attempts) * 100).toFixed(1)) : null });
+    }
+    if (category === "rushing") {
+      var carries = safeNum(labelMap.CAR), ydsR = safeNum(labelMap.YDS);
+      return Object.assign(base, { carries: carries, yards: ydsR, touchdowns: safeNum(labelMap.TD), yardsPerCarry: labelMap.AVG != null ? Number(labelMap.AVG) : (carries ? Number((ydsR / carries).toFixed(1)) : null) });
+    }
+    if (category === "receiving") {
+      var rec = safeNum(labelMap.REC), ydsC = safeNum(labelMap.YDS);
+      return Object.assign(base, { receptions: rec, yards: ydsC, touchdowns: safeNum(labelMap.TD), yardsPerReception: labelMap.AVG != null ? Number(labelMap.AVG) : (rec ? Number((ydsC / rec).toFixed(1)) : null) });
+    }
+    if (category === "defensive") {
+      // Used for the team-page Havoc Stats panel: tackles-for-loss and sacks
+      // are the "front seven" disruption signals, passes-defended is the
+      // "defensive backs" signal (interceptions, tracked in their own
+      // category below, count toward DB havoc too).
+      return Object.assign(base, { tacklesForLoss: safeNum(labelMap.TFL), sacks: safeNum(labelMap.SACKS), passesDefended: safeNum(labelMap.PD), tackles: safeNum(labelMap.TOT) });
+    }
+    if (category === "interceptions") {
+      return Object.assign(base, { interceptions: safeNum(labelMap.INT) });
+    }
+    return base;
+  }
+  function normalizePlayerBlock(block) {
+    var categories = {};
+    ((block && block.statistics) || []).forEach(function (cat) {
+      categories[cat.name] = (cat.athletes || []).map(function (a) { return normalizeAthleteRow(cat.name, zipLabels(cat.labels, a.stats), a); });
+    });
+    return categories;
+  }
+  function normalizeTeamStatsBlock(block) {
+    var out = {};
+    ((block && block.statistics) || []).forEach(function (s) { out[s.name] = { label: s.label || s.name, displayValue: s.displayValue != null ? s.displayValue : (s.value != null ? s.value : "N/A") }; });
+    return out;
+  }
+  function getGameSummary(eventId, finalHint) {
+    var url = SITE_BASE + "/summary?event=" + encodeURIComponent(eventId);
+    var ttl = finalHint ? 6 * HOUR : 15 * 1000; // final box scores never change; live ones refresh fast
+    return fetchJson(url, ttl).then(function (raw) {
+      var headerComp = (raw.header && raw.header.competitions && raw.header.competitions[0]) || null;
+      var status = normalizeStatus((headerComp && headerComp.status) || (raw.boxscore && raw.boxscore.status));
+      var boxTeams = (raw.boxscore && raw.boxscore.teams) || [];
+      var boxPlayers = (raw.boxscore && raw.boxscore.players) || [];
+      var teamStats = {
+        home: normalizeTeamStatsBlock(findSide(boxTeams, "home")),
+        away: normalizeTeamStatsBlock(findSide(boxTeams, "away")),
+      };
+      var homeCompetitor = headerComp && findSide(headerComp.competitors || [], "home");
+      var awayCompetitor = headerComp && findSide(headerComp.competitors || [], "away");
+      var homeTeamId = homeCompetitor && homeCompetitor.team && homeCompetitor.team.id;
+      var awayTeamId = awayCompetitor && awayCompetitor.team && awayCompetitor.team.id;
+      function playerBlockFor(teamId) {
+        for (var i = 0; i < boxPlayers.length; i++) if (String(boxPlayers[i].team && boxPlayers[i].team.id) === String(teamId)) return boxPlayers[i];
+        return null;
+      }
+      var playerStats = {
+        home: normalizePlayerBlock(playerBlockFor(homeTeamId) || boxPlayers[0]),
+        away: normalizePlayerBlock(playerBlockFor(awayTeamId) || boxPlayers[1]),
+      };
+      var drivesRaw = Array.isArray(raw.drives) ? raw.drives : (raw.drives ? (raw.drives.previous || []).concat(raw.drives.current ? [raw.drives.current] : []) : []);
+      function findScoringPlay(drive) {
+        // The drive-level fields (displayResult, etc) only say "Touchdown" - the
+        // actual scorer and play details live on the individual play within the
+        // drive, flagged scoringPlay:true (its "text" already reads like
+        // "Julian Sayin pass complete to Will Kacmarek for 47 yds for a TD").
+        var plays = drive.plays || [];
+        for (var i = plays.length - 1; i >= 0; i--) { if (plays[i].scoringPlay) return plays[i]; }
+        return plays.length ? plays[plays.length - 1] : null;
+      }
+      var scoringPlays = drivesRaw.filter(function (d) { return d.isScore; }).map(function (d) {
+        var play = findScoringPlay(d);
+        var team = (d.team && (d.team.abbreviation || d.team.displayName)) || (play && play.team && (play.team.abbreviation || play.team.displayName)) || null;
+        return {
+          team: team,
+          description: (play && play.text) || d.displayResult || d.result || d.description || "Scoring drive",
+          scoringType: (play && play.scoringType && play.scoringType.displayName) || (play && play.type && play.type.text) || null,
+          period: (play && play.period && play.period.number) || (d.start && d.start.period && d.start.period.number),
+          time: (play && play.clock && play.clock.displayValue) || (d.start && d.start.clock && d.start.clock.displayValue),
+        };
+      });
+      // Full play-by-play (every drive, every play - not just the scoring
+      // ones above) for the Game Detail page's Play-by-Play panel. Also
+      // carries "type.text" and "statYardage" (ESPN's own per-play gain/loss
+      // figure - no need to regex-parse yardage out of the text description)
+      // and "isPenalty", so Explosive Plays below can identify a real rush or
+      // completed pass of 20+ yards without misreading a penalty or a
+      // special-teams return as one.
+      function normalizeDrivePlay(play) {
+        return {
+          text: play.text || "",
+          period: (play.period && play.period.number) || null,
+          time: (play.clock && play.clock.displayValue) || null,
+          scoringPlay: !!play.scoringPlay,
+          typeText: (play.type && play.type.text) || null,
+          yards: play.statYardage != null ? Number(play.statYardage) : null,
+          isPenalty: !!play.isPenalty,
+        };
+      }
+      var drives = drivesRaw.map(function (d) {
+        var team = d.team || {};
+        return {
+          teamId: team.id != null ? String(team.id) : null,
+          team: team.displayName || team.shortDisplayName || team.abbreviation || null,
+          result: d.displayResult || d.result || null,
+          description: d.description || null, // e.g. "8 plays, 75 yards, 3:45"
+          isScore: !!d.isScore,
+          // 0-100 scale from the *offense's* perspective for this drive (0 =
+          // its own goal line, 100 = the goal line it's driving toward) - the
+          // same normalization ESPN uses for its own drive-chart graphics.
+          // Used below for Red Zone Efficiency (>=80 = inside the 20).
+          startYardLine: d.start && d.start.yardLine != null ? Number(d.start.yardLine) : null,
+          endYardLine: d.end && d.end.yardLine != null ? Number(d.end.yardLine) : null,
+          plays: (d.plays || []).map(normalizeDrivePlay),
+        };
+      });
+      return {
+        id: (raw.header && raw.header.id) || String(eventId),
+        date: headerComp && headerComp.date ? new Date(headerComp.date) : null,
+        status: status,
+        attendance: (raw.gameInfo && raw.gameInfo.attendance) || null,
+        venue: raw.gameInfo && raw.gameInfo.venue ? { id: raw.gameInfo.venue.id || null, name: raw.gameInfo.venue.fullName || null, city: raw.gameInfo.venue.address && raw.gameInfo.venue.address.city, state: raw.gameInfo.venue.address && raw.gameInfo.venue.address.state } : null,
+        home: homeCompetitor ? normalizeTeamSide(homeCompetitor) : null,
+        away: awayCompetitor ? normalizeTeamSide(awayCompetitor) : null,
+        teamStats: teamStats, playerStats: playerStats, scoringPlays: scoringPlays, drives: drives,
+      };
+    });
+  }
+
+  // --------------------------------------------------------------------------
+  // "Today's Top Performers" - the top passers/rushers/receivers across all of
+  // the selected day's games so far, shown right on the Scores page. Pulls
+  // from the same box scores the Game Detail page uses (only for games that
+  // have actually started - no point fetching a box score for a game that
+  // hasn't kicked off yet).
+  // --------------------------------------------------------------------------
+  function computeDayLeaders(games) {
+    var started = games.filter(function (g) { return g.status.state !== "pre"; });
+    if (!started.length) return Promise.resolve(null);
+
+    return Promise.all(started.map(function (g) {
+      return getGameSummary(g.id, g.status.completed).catch(function () { return null; });
+    })).then(function (summaries) {
+      var raw = { passing: [], rushing: [], receiving: [] };
+      summaries.forEach(function (summary, i) {
+        if (!summary) return;
+        var game = started[i];
+        ["home", "away"].forEach(function (side) {
+          var teamMeta = game[side];
+          var opponent = game[side === "home" ? "away" : "home"];
+          var playerCats = (summary.playerStats && summary.playerStats[side]) || {};
+          ["passing", "rushing", "receiving"].forEach(function (cat) {
+            (playerCats[cat] || []).forEach(function (row) {
+              if (row.yards == null) return;
+              raw[cat].push({
+                id: row.id, name: row.name, position: row.position, yards: row.yards, touchdowns: row.touchdowns,
+                completions: row.completions, attempts: row.attempts, carries: row.carries, receptions: row.receptions,
+                team: teamMeta.shortName || teamMeta.name, logo: teamMeta.logo, teamId: teamMeta.id,
+                opponent: opponent.shortName || opponent.name, opponentId: opponent.id,
+              });
+            });
+          });
+        });
+      });
+      // Every player who recorded a stat in the category, sorted best-first -
+      // the list itself scrolls in the UI rather than being capped here. Yards
+      // and touchdowns are broken out into separate ranked lists; the TD lists
+      // only include players who actually scored (a 0-TD list isn't useful).
+      function byYards(a, b) { return b.yards - a.yards; }
+      function byTouchdowns(a, b) { return (b.touchdowns || 0) - (a.touchdowns || 0); }
+      function scored(row) { return row.touchdowns > 0; }
+      var lists = {
+        passingYards: raw.passing.slice().sort(byYards),
+        passingTouchdowns: raw.passing.filter(scored).sort(byTouchdowns),
+        rushingYards: raw.rushing.slice().sort(byYards),
+        rushingTouchdowns: raw.rushing.filter(scored).sort(byTouchdowns),
+        receivingYards: raw.receiving.slice().sort(byYards),
+        receivingTouchdowns: raw.receiving.filter(scored).sort(byTouchdowns),
+      };
+      var any = Object.keys(lists).some(function (k) { return lists[k].length; });
+      return any ? lists : null;
+    });
+  }
+
+  // --------------------------------------------------------------------------
+  // ESPN: season leaders (passing/rushing/receiving yards + touchdowns) for
+  // the "Season" tab of the Top Performers panel. This is a different ESPN
+  // endpoint than the scoreboard/box-score one above: it hands back each
+  // category's leaderboard as $ref links that have to be resolved into an
+  // athlete + team before they're displayable. Those lookups are cached (via
+  // fetchJson) and de-duped across categories since the same player/team can
+  // show up in more than one leaderboard.
+  // --------------------------------------------------------------------------
+  var CORE_LEADERS_BASE = "https://sports.core.api.espn.com/v2/sports/football/leagues/college-football/seasons/";
+  var SEASON_LEADER_CATEGORIES = {
+    passingYards: { label: "Passing Yards", unit: "YDS" },
+    passingTouchdowns: { label: "Passing TDs", unit: "TD" },
+    rushingYards: { label: "Rushing Yards", unit: "YDS" },
+    rushingTouchdowns: { label: "Rushing TDs", unit: "TD" },
+    receivingYards: { label: "Receiving Yards", unit: "YDS" },
+    receivingTouchdowns: { label: "Receiving TDs", unit: "TD" },
+  };
+  var SEASON_LEADER_ORDER = ["passingYards", "passingTouchdowns", "rushingYards", "rushingTouchdowns", "receivingYards", "receivingTouchdowns"];
+  var seasonLeadersCache = {}; // "year:seasonType" -> promise
+
+  function getSeasonLeaders(year, seasonType) {
+    var key = year + ":" + seasonType;
+    if (seasonLeadersCache[key]) return seasonLeadersCache[key];
+    var url = CORE_LEADERS_BASE + year + "/types/" + seasonType + "/leaders?limit=25";
+    var refCache = {}; // $ref url -> promise, shared across every category in this call
+    function resolveRef(ref) {
+      if (!ref) return Promise.resolve(null);
+      if (!refCache[ref]) refCache[ref] = fetchJson(ref, DAY).catch(function () { return null; });
+      return refCache[ref];
+    }
+    seasonLeadersCache[key] = fetchJson(url, HOUR).then(function (raw) {
+      var categories = raw.categories || [];
+      var result = {};
+      var work = SEASON_LEADER_ORDER.map(function (catName) {
+        var cat = categories.filter(function (c) { return c.name === catName; })[0];
+        var entries = (cat && cat.leaders) || [];
+        return Promise.all(entries.map(function (entry) {
+          var athleteRef = entry.athlete && entry.athlete.$ref;
+          var teamRef = entry.team && entry.team.$ref;
+          return Promise.all([resolveRef(athleteRef), resolveRef(teamRef)]).then(function (res) {
+            var athlete = res[0], team = res[1];
+            var logo = team && ((team.logos && team.logos[0] && team.logos[0].href) || team.logo) || null;
+            return {
+              id: athlete && athlete.id,
+              name: (athlete && (athlete.displayName || athlete.shortName)) || "Unknown",
+              position: athlete && athlete.position && athlete.position.abbreviation,
+              team: (team && (team.shortDisplayName || team.abbreviation || team.displayName)) || "",
+              teamId: team && team.id,
+              logo: logo,
+              value: entry.value != null ? Math.round(entry.value) : null,
+            };
+          });
+        })).then(function (rows) { result[catName] = rows; });
+      });
+      return Promise.all(work).then(function () { return result; });
+    }).catch(function (err) {
+      delete seasonLeadersCache[key];
+      throw err;
+    });
+    return seasonLeadersCache[key];
+  }
+
+  // --------------------------------------------------------------------------
+  // ESPN: a team's full-roster season stats, for the Game page before kickoff
+  // (there's no box score yet, so the "Player Statistics" section shows each
+  // team's skill players' season-to-date passing/rushing/receiving instead).
+  // Pulls the roster to get skill-position player IDs, then resolves each
+  // player's season statistics - the same per-player row shape the box score
+  // uses, so it renders through the exact same table code.
+  // --------------------------------------------------------------------------
+  var SKILL_POSITIONS = { QB: 1, RB: 1, HB: 1, WR: 1, TE: 1, FB: 1, ATH: 1 };
+  var teamSeasonStatsCache = {}; // "teamId:year:seasonType" -> promise
+
+  function getTeamRosterSkillPlayers(teamId) {
+    var url = SITE_BASE + "/teams/" + encodeURIComponent(teamId) + "/roster";
+    return fetchJson(url, DAY).then(function (raw) {
+      var out = [];
+      (raw.athletes || []).forEach(function (group) {
+        (group.items || []).forEach(function (a) {
+          var posAbbr = a.position && a.position.abbreviation;
+          if (posAbbr && SKILL_POSITIONS[posAbbr] && a.id) out.push({ id: a.id, name: a.displayName || a.fullName || "Unknown", position: posAbbr });
+        });
+      });
+      return out;
+    });
+  }
+  function seasonStatRowsFromAthlete(playerMeta, statsRaw) {
+    var cats = {};
+    ((statsRaw && statsRaw.splits && statsRaw.splits.categories) || []).forEach(function (c) {
+      var m = {};
+      (c.stats || []).forEach(function (s) { m[s.name] = s.value; });
+      cats[c.name] = m;
+    });
+    var passing = cats.passing || {}, rushing = cats.rushing || {}, receiving = cats.receiving || {};
+    return {
+      passing: safeNum(passing.passingAttempts) ? {
+        name: playerMeta.name, position: playerMeta.position,
+        completions: safeNum(passing.completions), attempts: safeNum(passing.passingAttempts),
+        yards: safeNum(passing.passingYards), touchdowns: safeNum(passing.passingTouchdowns), interceptions: safeNum(passing.interceptions),
+        completionPct: passing.completionPct != null ? Number(Number(passing.completionPct).toFixed(1)) : null,
+      } : null,
+      rushing: safeNum(rushing.rushingAttempts) ? {
+        name: playerMeta.name, position: playerMeta.position,
+        carries: safeNum(rushing.rushingAttempts), yards: safeNum(rushing.rushingYards), touchdowns: safeNum(rushing.rushingTouchdowns),
+        yardsPerCarry: rushing.yardsPerRushAttempt != null ? Number(Number(rushing.yardsPerRushAttempt).toFixed(1)) : null,
+      } : null,
+      receiving: safeNum(receiving.receptions) ? {
+        name: playerMeta.name, position: playerMeta.position,
+        receptions: safeNum(receiving.receptions), yards: safeNum(receiving.receivingYards), touchdowns: safeNum(receiving.receivingTouchdowns),
+        yardsPerReception: receiving.yardsPerReception != null ? Number(Number(receiving.yardsPerReception).toFixed(1)) : null,
+      } : null,
+    };
+  }
+  function getTeamSeasonPlayerStats(teamId, year, seasonType) {
+    var key = teamId + ":" + year + ":" + seasonType;
+    if (teamSeasonStatsCache[key]) return teamSeasonStatsCache[key];
+    teamSeasonStatsCache[key] = getTeamRosterSkillPlayers(teamId).then(function (players) {
+      return Promise.all(players.map(function (p) {
+        var url = CORE_LEADERS_BASE + year + "/types/" + seasonType + "/athletes/" + encodeURIComponent(p.id) + "/statistics/0";
+        return fetchJson(url, 6 * HOUR).then(function (raw) { return seasonStatRowsFromAthlete(p, raw); }).catch(function () { return null; });
+      }));
+    }).then(function (rows) {
+      var out = { passing: [], rushing: [], receiving: [] };
+      rows.forEach(function (r) {
+        if (!r) return;
+        if (r.passing) out.passing.push(r.passing);
+        if (r.rushing) out.rushing.push(r.rushing);
+        if (r.receiving) out.receiving.push(r.receiving);
+      });
+      out.passing.sort(function (a, b) { return b.yards - a.yards; });
+      out.rushing.sort(function (a, b) { return b.yards - a.yards; });
+      out.receiving.sort(function (a, b) { return b.yards - a.yards; });
+      return out;
+    }).catch(function (err) {
+      delete teamSeasonStatsCache[key];
+      throw err;
+    });
+    return teamSeasonStatsCache[key];
+  }
+
+  // --------------------------------------------------------------------------
+  // Player page: one athlete's season stats, linked to from every player name
+  // shown in the Top Performers panel. Reuses the exact same core-API
+  // endpoint and passing/rushing/receiving parsing as the team page's
+  // pregame stats above; defensive players (who have none of those three)
+  // get their own curated pull from the "defensive" and
+  // "defensiveInterceptions" categories that same endpoint returns.
+  // --------------------------------------------------------------------------
+  var athleteSeasonStatsCache = {}; // "athleteId:year:seasonType" -> promise
+  function getAthleteSeasonStats(athleteId, year, seasonType) {
+    var key = athleteId + ":" + year + ":" + seasonType;
+    if (athleteSeasonStatsCache[key]) return athleteSeasonStatsCache[key];
+    var url = CORE_LEADERS_BASE + year + "/types/" + seasonType + "/athletes/" + encodeURIComponent(athleteId) + "/statistics/0";
+    athleteSeasonStatsCache[key] = fetchJson(url, 6 * HOUR).catch(function (err) { delete athleteSeasonStatsCache[key]; throw err; });
+    return athleteSeasonStatsCache[key];
+  }
+  function athleteStatCategories(statsRaw) {
+    var cats = {};
+    ((statsRaw && statsRaw.splits && statsRaw.splits.categories) || []).forEach(function (c) {
+      var m = {};
+      (c.stats || []).forEach(function (s) { m[s.name] = s.value; });
+      cats[c.name] = m;
+    });
+    return cats;
+  }
+  function seasonDefenseFromAthlete(statsRaw) {
+    var cats = athleteStatCategories(statsRaw);
+    var d = cats.defensive || {}, di = cats.defensiveInterceptions || {};
+    var hasDefense = safeNum(d.totalTackles) || safeNum(d.sacks) || safeNum(d.tacklesForLoss) || safeNum(di.interceptions);
+    if (!hasDefense) return null;
+    return {
+      tackles: safeNum(d.totalTackles), soloTackles: safeNum(d.soloTackles), tacklesForLoss: safeNum(d.tacklesForLoss),
+      sacks: safeNum(d.sacks), passesDefended: safeNum(d.passesDefended), interceptions: safeNum(di.interceptions),
+    };
+  }
+  function seasonGamesPlayedFromAthlete(statsRaw) {
+    var cats = athleteStatCategories(statsRaw);
+    return safeNum((cats.general || {}).gamesPlayed, null);
+  }
+  // --------------------------------------------------------------------------
+  // Player Game Log: this athlete's stat line from every completed game their
+  // team has played this season, matched up by athlete id against the same
+  // per-game box scores Pace/Havoc already pull (normalizePlayerBlock already
+  // tags every category's rows with the athlete's id - see normalizeAthleteRow).
+  // --------------------------------------------------------------------------
+  function getPlayerGameLog(athleteId, teamId, year) {
+    return getTeamSchedule(teamId, year).then(function (data) {
+      var completed = (data.games || []).filter(function (g) { return g.status.completed; });
+      if (!completed.length) return [];
+      return Promise.all(completed.map(function (g) { return getGameSummary(g.id, true).catch(function () { return null; }); })).then(function (summaries) {
+        var rows = [];
+        summaries.forEach(function (summary, i) {
+          if (!summary || !summary.playerStats) return;
+          var g = completed[i];
+          var side = String(g.home.id) === String(teamId) ? "home" : "away";
+          var oppSide = side === "home" ? g.away : g.home;
+          var cats = summary.playerStats[side] || {};
+          function findRow(catName) {
+            return (cats[catName] || []).filter(function (r) { return r.id != null && String(r.id) === String(athleteId); })[0] || null;
+          }
+          var row = {
+            gameId: g.id, week: g.week, date: g.date, opponentId: oppSide.id, opponent: oppSide.shortName || oppSide.name,
+            passing: findRow("passing"), rushing: findRow("rushing"), receiving: findRow("receiving"),
+            defense: findRow("defensive"), defInt: findRow("interceptions"),
+          };
+          if (row.passing || row.rushing || row.receiving || row.defense || (row.defInt && row.defInt.interceptions)) rows.push(row);
+        });
+        rows.sort(function (a, b) { return (a.date ? a.date.getTime() : 0) - (b.date ? b.date.getTime() : 0); });
+        return rows;
+      });
+    });
+  }
+  function gameLogStatText(row) {
+    var parts = [];
+    if (row.passing) parts.push(row.passing.completions + "/" + row.passing.attempts + ", " + row.passing.yards + " YDS" + (row.passing.touchdowns ? ", " + row.passing.touchdowns + " TD" : "") + (row.passing.interceptions ? ", " + row.passing.interceptions + " INT" : ""));
+    if (row.rushing) parts.push(row.rushing.carries + " CAR, " + row.rushing.yards + " YDS" + (row.rushing.touchdowns ? ", " + row.rushing.touchdowns + " TD" : ""));
+    if (row.receiving) parts.push(row.receiving.receptions + " REC, " + row.receiving.yards + " YDS" + (row.receiving.touchdowns ? ", " + row.receiving.touchdowns + " TD" : ""));
+    if (row.defense || (row.defInt && row.defInt.interceptions)) {
+      var d = row.defense || {};
+      var defBits = [(d.tackles || 0) + " TOT"];
+      if (d.tacklesForLoss) defBits.push(d.tacklesForLoss + " TFL");
+      if (d.sacks) defBits.push(d.sacks + " SACK");
+      if (d.passesDefended) defBits.push(d.passesDefended + " PD");
+      if (row.defInt && row.defInt.interceptions) defBits.push(row.defInt.interceptions + " INT");
+      parts.push(defBits.join(", "));
+    }
+    return parts.length ? parts.join(" &middot; ") : "-";
+  }
+  function gameLogRowHtml(row) {
+    var dateCell = row.date ? '<a class="team-link" href="#/game/' + encodeURIComponent(row.gameId) + '">' + escapeHtml(formatShortDate(row.date)) + "</a>" : "-";
+    return "<tr><td>" + (row.week || "-") + "</td><td>" + dateCell + "</td><td>" + teamLinkHtml(row.opponentId, row.opponent) + "</td><td>" + gameLogStatText(row) + "</td></tr>";
+  }
+  function gameLogHtml(rows) {
+    if (!rows || !rows.length) return '<p class="muted small">No game-by-game stats recorded for this player yet this season.</p>';
+    var head = "<thead><tr><th>Wk</th><th>Date</th><th>Opponent</th><th>Stat Line</th></tr></thead>";
+    return '<table class="standings-table game-log-table">' + head + "<tbody>" + rows.map(gameLogRowHtml).join("") + "</tbody></table>";
+  }
+  function playerStatGridHtml(pairs) {
+    var filtered = pairs.filter(function (p) { return p[1] != null && p[1] !== ""; });
+    if (!filtered.length) return "";
+    return '<div class="ats-summary">' + filtered.map(function (p) {
+      return '<div class="ats-stat"><div class="ats-stat-value">' + escapeHtml(String(p[1])) + '</div><div class="ats-stat-label">' + escapeHtml(p[0]) + "</div></div>";
+    }).join("") + "</div>";
+  }
+  function playerStatsPanelsHtml(stats) {
+    if (!stats) return '<p class="muted small">No season stats found for this player yet.</p>';
+    var panels = "";
+    if (stats.passing) panels += '<div class="player-category"><h3>Passing</h3>' + playerStatGridHtml([
+      ["CMP/ATT", stats.passing.completions + "/" + stats.passing.attempts], ["YDS", stats.passing.yards],
+      ["PCT", stats.passing.completionPct != null ? stats.passing.completionPct + "%" : null],
+      ["TD", stats.passing.touchdowns], ["INT", stats.passing.interceptions],
+    ]) + "</div>";
+    if (stats.rushing) panels += '<div class="player-category"><h3>Rushing</h3>' + playerStatGridHtml([
+      ["CAR", stats.rushing.carries], ["YDS", stats.rushing.yards], ["AVG", stats.rushing.yardsPerCarry], ["TD", stats.rushing.touchdowns],
+    ]) + "</div>";
+    if (stats.receiving) panels += '<div class="player-category"><h3>Receiving</h3>' + playerStatGridHtml([
+      ["REC", stats.receiving.receptions], ["YDS", stats.receiving.yards], ["AVG", stats.receiving.yardsPerReception], ["TD", stats.receiving.touchdowns],
+    ]) + "</div>";
+    if (stats.defense) panels += '<div class="player-category"><h3>Defense</h3>' + playerStatGridHtml([
+      ["TOT", stats.defense.tackles], ["SOLO", stats.defense.soloTackles], ["TFL", stats.defense.tacklesForLoss],
+      ["SACKS", stats.defense.sacks], ["PD", stats.defense.passesDefended], ["INT", stats.defense.interceptions],
+    ]) + "</div>";
+    if (!panels) return '<p class="muted small">No notable stats recorded for this player yet this season.</p>';
+    return panels;
+  }
+  function playerView(root, segments, query) {
+    setActiveNav("");
+    var athleteId = segments[0];
+    if (!athleteId) { root.innerHTML = errorHtml({ message: "No player selected." }); return; }
+    var name = query.get("name") || "Player";
+    var position = query.get("position") || "";
+    var team = query.get("team") || "";
+    var teamId = query.get("teamId") || "";
+    var logo = query.get("logo") || "";
+    var year = Number(query.get("year")) || DEFAULT_YEAR;
+
+    function linkFor(y) {
+      var params = new URLSearchParams({ name: name, position: position, team: team, teamId: teamId, logo: logo, year: String(y) });
+      return "/player/" + encodeURIComponent(athleteId) + "?" + params.toString();
+    }
+
+    root.innerHTML =
+      '<a href="#/scores" class="back-link">&larr; Back to scores</a>' +
+      '<div class="team-page-header">' + (logo ? logoHtml(logo, name) : "") + "<div><h1>" + escapeHtml(name) + "</h1>" +
+      '<div class="team-record-line">' + [position, team ? teamLinkHtml(teamId, team) : ""].filter(Boolean).join(" &middot; ") + "</div></div></div>" +
+      '<div class="filter-bar"><label>Season<select id="player-year">' + yearOptionsHtml(year) + "</select></label></div>" +
+      '<section class="panel"><h2>Season Stats</h2><div id="player-stats-slot">' + loadingHtml("Loading season stats...") + "</div></section>" +
+      '<section class="panel"><h2>Game Log</h2><div id="player-gamelog-slot">' + (teamId ? loadingHtml("Loading game-by-game stats...") : '<p class="muted small">Game log isn\'t available without a team on file for this player.</p>') + "</div></section>";
+
+    root.querySelector("#player-year").addEventListener("change", function (e) { navigate(linkFor(Number(e.target.value))); });
+
+    if (teamId) {
+      var gamelogSlot = root.querySelector("#player-gamelog-slot");
+      getPlayerGameLog(athleteId, teamId, year).then(function (rows) {
+        if (gamelogSlot) gamelogSlot.innerHTML = gameLogHtml(rows);
+      }).catch(function () {
+        if (gamelogSlot) gamelogSlot.innerHTML = '<p class="muted small">Game log isn\'t available right now.</p>';
+      });
+    }
+
+    var slot = root.querySelector("#player-stats-slot");
+    getAthleteSeasonStats(athleteId, year, 2).then(function (raw) {
+      var parsed = seasonStatRowsFromAthlete({ name: name, position: position }, raw);
+      var games = seasonGamesPlayedFromAthlete(raw);
+      var stats = { passing: parsed.passing, rushing: parsed.rushing, receiving: parsed.receiving, defense: seasonDefenseFromAthlete(raw) };
+      var gamesLine = games != null ? '<p class="muted small">' + games + " game" + (games === 1 ? "" : "s") + " played in " + year + ".</p>" : "";
+      slot.innerHTML = gamesLine + playerStatsPanelsHtml(stats);
+    }).catch(function () {
+      slot.innerHTML = '<p class="muted small">Couldn\'t load season stats for this player right now.</p>';
+    });
+  }
+
+  // --------------------------------------------------------------------------
+  // ESPN: standings
+  // --------------------------------------------------------------------------
+  var standingsCache = {}; // year -> promise
+  function parseRecordSummary(summary) {
+    if (!summary) return { w: 0, l: 0, t: 0 };
+    var parts = String(summary).split("-").map(Number);
+    return { w: parts[0] || 0, l: parts[1] || 0, t: parts[2] || 0 };
+  }
+  function winPct(rec) {
+    var games = rec.w + rec.l + rec.t;
+    if (!games) return null;
+    return (rec.w + 0.5 * rec.t) / games;
+  }
+  function getStandings(year) {
+    if (standingsCache[year]) return standingsCache[year];
+    standingsCache[year] = fetchJson(STANDINGS_URL + "?season=" + year, HOUR).then(function (raw) {
+      var byConf = {}; // confName -> rows
+      var teamConfMap = {}; // teamId -> confName
+
+      function walk(node) {
+        if (!node) return;
+        if (node.standings && Array.isArray(node.standings.entries)) {
+          var confName = node.name || node.abbreviation || "Other";
+          var rows = node.standings.entries.map(function (entry) {
+            var team = entry.team || {};
+            var stats = entry.stats || [];
+            var overallStat = stats.filter(function (s) { return s.type === "total"; })[0];
+            var confStat = stats.filter(function (s) { return s.type === "vsconf"; })[0];
+            var overall = parseRecordSummary(overallStat && (overallStat.summary || overallStat.displayValue));
+            var conf = parseRecordSummary(confStat && (confStat.summary || confStat.displayValue));
+            teamConfMap[String(team.id)] = confName;
+            return {
+              teamId: team.id,
+              team: team.displayName || team.name,
+              abbreviation: team.abbreviation || "",
+              logo: (team.logos && team.logos[0] && team.logos[0].href) || null,
+              overall: overall, conf: conf, confWinPct: winPct(conf),
+            };
+          });
+          rows.sort(function (a, b) { return (b.confWinPct == null ? -1 : b.confWinPct) - (a.confWinPct == null ? -1 : a.confWinPct) || (b.conf.w - a.conf.w); });
+          rows.forEach(function (r, i) { r.rank = i + 1; });
+          byConf[confName] = rows;
+        } else if (Array.isArray(node.children)) {
+          node.children.forEach(walk);
+        }
+      }
+      walk(raw);
+      return { byConf: byConf, teamConfMap: teamConfMap };
+    });
+    return standingsCache[year];
+  }
+
+  // Every FBS team as a flat list (id/name/abbreviation/logo), for the header
+  // search box - built from the same standings data the Standings page uses,
+  // so there's no separate "list every team" endpoint to maintain.
+  function getAllTeams(year) {
+    return getStandings(year).then(function (standings) {
+      var all = [];
+      Object.keys(standings.byConf).forEach(function (conf) {
+        standings.byConf[conf].forEach(function (t) {
+          all.push({ id: t.teamId, name: t.team, abbreviation: t.abbreviation, logo: t.logo });
+        });
+      });
+      return all;
+    });
+  }
+
+  // --------------------------------------------------------------------------
+  // Format helpers
+  // --------------------------------------------------------------------------
+  function escapeHtml(str) {
+    if (str == null) return "";
+    return String(str).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
+  }
+  function toDateKey(date) { return date.getFullYear() + "-" + String(date.getMonth() + 1).padStart(2, "0") + "-" + String(date.getDate()).padStart(2, "0"); }
+  function fromDateKey(key) { var p = key.split("-").map(Number); return new Date(p[0], p[1] - 1, p[2]); }
+  function addDays(date, n) { var c = new Date(date); c.setDate(c.getDate() + n); return c; }
+  function isSameDay(a, b) { return toDateKey(a) === toDateKey(b); }
+  var WEEKDAY_FMT = new Intl.DateTimeFormat(undefined, { weekday: "long", month: "long", day: "numeric" });
+  function formatDateHeading(date) { return WEEKDAY_FMT.format(date); }
+  var TIME_FMT = new Intl.DateTimeFormat(undefined, { hour: "numeric", minute: "2-digit" });
+  function formatKickoff(date) { return date ? TIME_FMT.format(date) : "TBD"; }
+  var SHORT_DATE_FMT = new Intl.DateTimeFormat(undefined, { month: "short", day: "numeric" });
+  function formatShortDate(date) { return date ? SHORT_DATE_FMT.format(date) : ""; }
+  var ORDINALS = { 1: "1st", 2: "2nd", 3: "3rd", 4: "4th" };
+  function periodLabel(period) { if (!period) return ""; return ORDINALS[period] || (period > 4 ? "OT" : period + "th"); }
+  function statusLine(status, date) {
+    if (status.state === "post") return status.shortDetail || (status.completed ? "Final" : status.description || "Postponed");
+    if (status.state === "in") {
+      var period = periodLabel(status.period);
+      if (status.displayClock === "0.0" || status.displayClock === "0:00") return "End of " + period;
+      return period + " – " + status.displayClock;
+    }
+    return formatKickoff(date);
+  }
+  function gameBadge(status) {
+    if (status.state === "in") return { cls: "badge-live", label: "LIVE" };
+    if (status.state === "post") return status.completed ? { cls: "badge-final", label: "FINAL" } : { cls: "badge-postponed", label: (status.description || "POSTPONED").toUpperCase() };
+    return { cls: "badge-upcoming", label: "UPCOMING" };
+  }
+  function recordText(r) { return r || "0-0"; }
+  function winPctText(p) { return p == null ? "-" : p.toFixed(3).replace(/^0\./, "."); }
+
+  // --------------------------------------------------------------------------
+  // Small render helpers
+  // --------------------------------------------------------------------------
+  function loadingHtml(msg) { return '<div class="state-block loading-block"><div class="spinner" aria-hidden="true"></div><p>' + escapeHtml(msg || "Loading...") + "</p></div>"; }
+  function errorHtml(err) { return '<div class="state-block error-block" role="alert"><p class="error-title">Couldn\'t load this' + (err && err.status ? " (HTTP " + err.status + ")" : "") + '</p><p class="error-detail">' + escapeHtml((err && err.message) || "Something went wrong.") + '</p><p class="error-hint">Check your connection or try again in a moment.</p></div>'; }
+  function emptyHtml(msg) { return '<div class="state-block empty-block"><p>' + escapeHtml(msg) + "</p></div>"; }
+
+  function logoHtml(logo, abbr, cls) {
+    if (logo) return '<img class="team-logo ' + (cls || "") + '" src="' + escapeHtml(logo) + '" alt="" loading="lazy" width="28" height="28" />';
+    return '<span class="team-logo team-logo-fallback ' + (cls || "") + '">' + escapeHtml((abbr || "?").slice(0, 3).toUpperCase()) + "</span>";
+  }
+
+  function teamRowHtml(team, showScore) {
+    var rank = team.rank ? '<span class="team-rank">#' + team.rank + "</span>" : "";
+    var score = showScore && team.score != null ? '<span class="team-score' + (team.winner ? " is-winner" : "") + '">' + team.score + "</span>" : "";
+    return '<div class="team-row">' +
+      '<a class="team-row-link" href="#/team/' + encodeURIComponent(team.id) + '" title="View ' + escapeHtml(team.name) + '\'s schedule">' + logoHtml(team.logo, team.abbreviation) + '<span class="team-name">' + rank + escapeHtml(team.shortName || team.name) + "</span></a>" +
+      '<span class="team-record">' + escapeHtml(recordText(team.record)) + "</span>" + score + "</div>";
+  }
+
+  // Live ball-position graphic for a game card: a simple field bar (home
+  // team's own goal line always on the left, away's on the right) with a
+  // marker showing how far the possessing team has driven, plus the down &
+  // distance text underneath. Only rendered for games ESPN currently has
+  // "situation" data for - final and upcoming games just skip this block.
+  function fieldPositionHtml(game) {
+    var s = game.situation;
+    if (game.status.state !== "in" || !s || s.yardLine == null) return "";
+    var possessionIsHome = s.possession != null && String(s.possession) === String(game.home.id);
+    var possessionIsAway = s.possession != null && String(s.possession) === String(game.away.id);
+    // Flip the raw (possession-relative) yard line onto a fixed home-left/away-right
+    // bar so the graphic doesn't jump sides depending on who has the ball.
+    var pctFromHome = possessionIsHome ? s.yardLine : (possessionIsAway ? 100 - s.yardLine : 50);
+    pctFromHome = Math.max(2, Math.min(98, pctFromHome));
+    var possessingAbbr = possessionIsHome ? game.home.abbreviation : (possessionIsAway ? game.away.abbreviation : "");
+    var situationText = [possessingAbbr ? "<strong>" + escapeHtml(possessingAbbr) + "</strong>" : "", escapeHtml(s.downDistanceText || s.possessionText || "")].filter(Boolean).join(" &middot; ");
+    return '<div class="field-position' + (s.isRedZone ? " redzone" : "") + '">' +
+      '<div class="field-bar">' +
+        '<div class="field-endzone">' + escapeHtml(game.home.abbreviation || "") + "</div>" +
+        '<div class="field-track"><div class="field-midline"></div>' +
+        (possessingAbbr ? '<div class="field-ball" style="left:' + pctFromHome + '%">&#127944;</div>' : "") +
+        "</div>" +
+        '<div class="field-endzone">' + escapeHtml(game.away.abbreviation || "") + "</div>" +
+      "</div>" +
+      (situationText ? '<div class="field-situation-text">' + situationText + (s.isRedZone ? ' <span class="redzone-tag">RED ZONE</span>' : "") + "</div>" : "") +
+      "</div>";
+  }
+  function gameCardHtml(game) {
+    var stateClass = game.status.state === "in" ? "is-live" : game.status.state === "post" ? "is-final" : "is-upcoming";
+    var showScore = game.status.state !== "pre";
+    var badge = gameBadge(game.status);
+    var metaBits = [];
+    if (game.broadcast) metaBits.push(escapeHtml(game.broadcast));
+    if (game.venue && game.venue.name) metaBits.push(escapeHtml(game.venue.name));
+    // A plain div, not a link: team names inside are their own links to the
+    // team page, and anchors can't nest, so the "go to box score" behavior is
+    // wired up as a delegated click handler instead (see scoresView).
+    return '<div class="game-card ' + stateClass + '" data-game-id="' + escapeHtml(game.id) + '" tabindex="0" role="link" aria-label="View box score">' +
+      '<div class="game-card-header"><span class="badge ' + badge.cls + '">' + escapeHtml(badge.label) + '</span><span class="game-status-line">' + escapeHtml(statusLine(game.status, game.date)) + "</span></div>" +
+      '<div class="game-card-teams">' + teamRowHtml(game.away, showScore) + teamRowHtml(game.home, showScore) + "</div>" +
+      fieldPositionHtml(game) +
+      (metaBits.length ? '<div class="game-card-meta">' + metaBits.join(" &middot; ") + "</div>" : "") +
+      '<div class="game-card-odds" data-odds-slot></div>' +
+      "</div>";
+  }
+  function spreadTagHtml(odds, game, shortForm) {
+    var coverer = spreadCoverage(odds, game);
+    if (!coverer) return "";
+    if (coverer === "push") return '<span class="covered-tag covered-push">Push' + (shortForm ? "" : " - no one covered") + "</span>";
+    var covererName = coverer === "home" ? (game.home.shortName || game.home.name) : (game.away.shortName || game.away.name);
+    return '<span class="covered-tag">' + escapeHtml(covererName) + " covered</span>";
+  }
+  function totalTagHtml(odds, game) {
+    var result = totalResult(odds, game);
+    if (!result) return "";
+    if (result === "push") return '<span class="covered-tag total-tag covered-push">Push</span>';
+    return '<span class="covered-tag total-tag">' + (result === "over" ? "Over" : "Under") + " " + odds.overUnder + "</span>";
+  }
+  function oddsSlotHtml(odds, game) {
+    if (!odds) return "";
+    var line = '<span class="odds-line">' + escapeHtml(oddsLineText(odds, game)) + "</span>";
+    return line + " " + spreadTagHtml(odds, game, true) + " " + totalTagHtml(odds, game);
+  }
+  function matchupOddsHtml(odds, game) {
+    var line = "<span>" + escapeHtml(oddsLineText(odds, game)) + "</span>";
+    return '<div class="matchup-odds">' + line + spreadTagHtml(odds, game, false) + totalTagHtml(odds, game) + "</div>";
+  }
+
+  function teamLinkHtml(teamId, name) {
+    var text = escapeHtml(name || "");
+    return teamId ? '<a class="team-link" href="#/team/' + encodeURIComponent(teamId) + '">' + text + "</a>" : text;
+  }
+  function playerLinkHtml(row, year) {
+    var text = escapeHtml(row.name || "Unknown");
+    if (!row.id) return text; // no athlete id resolved (rare) - just show plain text
+    var params = new URLSearchParams({ name: row.name || "", position: row.position || "", team: row.team || "", teamId: row.teamId || "", logo: row.logo || "", year: String(year || DEFAULT_YEAR) });
+    return '<a class="player-link" href="#/player/' + encodeURIComponent(row.id) + "?" + params.toString() + '">' + text + "</a>";
+  }
+  function leaderItemHtml(rank, row, statText, subtitle, year) {
+    return '<li class="day-leader-item">' +
+      '<span class="day-leader-rank">' + rank + "</span>" +
+      logoHtml(row.logo, row.team) +
+      '<div class="day-leader-info"><div class="day-leader-name">' + playerLinkHtml(row, year) + (row.position ? ' <span class="muted small">' + escapeHtml(row.position) + "</span>" : "") + "</div>" +
+      '<div class="muted small">' + subtitle + "</div></div>" +
+      '<div class="day-leader-stat">' + statText + "</div></li>";
+  }
+  function leaderCardHtml(label, rows, statFn, subtitleFn, year) {
+    if (!rows || !rows.length) return '<div class="day-leader-card"><h4>' + escapeHtml(label) + '</h4><p class="muted small">No data yet</p></div>';
+    var items = rows.map(function (row, i) { return leaderItemHtml(i + 1, row, statFn(row), subtitleFn(row), year); }).join("");
+    return '<div class="day-leader-card"><h4>' + escapeHtml(label) + " (" + rows.length + ")</h4><ol class=\"day-leader-list\">" + items + "</ol></div>";
+  }
+
+  var TODAY_LEADER_CARDS = [
+    { key: "passingYards", label: "Passing Yards", stat: function (r) { return r.yards + " YDS" + (r.completions != null ? ", " + r.completions + "/" + r.attempts : "") + (r.touchdowns ? ", " + r.touchdowns + " TD" : ""); } },
+    { key: "passingTouchdowns", label: "Passing TDs", stat: function (r) { return r.touchdowns + " TD, " + r.yards + " YDS"; } },
+    { key: "rushingYards", label: "Rushing Yards", stat: function (r) { return r.yards + " YDS" + (r.carries != null ? ", " + r.carries + " CAR" : "") + (r.touchdowns ? ", " + r.touchdowns + " TD" : ""); } },
+    { key: "rushingTouchdowns", label: "Rushing TDs", stat: function (r) { return r.touchdowns + " TD, " + r.yards + " YDS"; } },
+    { key: "receivingYards", label: "Receiving Yards", stat: function (r) { return r.yards + " YDS" + (r.receptions != null ? ", " + r.receptions + " REC" : "") + (r.touchdowns ? ", " + r.touchdowns + " TD" : ""); } },
+    { key: "receivingTouchdowns", label: "Receiving TDs", stat: function (r) { return r.touchdowns + " TD, " + r.yards + " YDS"; } },
+  ];
+  function todayLeadersGridHtml(lists) {
+    var subtitle = function (r) { return teamLinkHtml(r.teamId, r.team) + " vs " + teamLinkHtml(r.opponentId, r.opponent); };
+    return '<div class="day-leaders-grid">' + TODAY_LEADER_CARDS.map(function (c) {
+      return leaderCardHtml(c.label, lists[c.key], c.stat, subtitle, DEFAULT_YEAR);
+    }).join("") + "</div>";
+  }
+  function seasonLeadersGridHtml(data, year) {
+    var subtitle = function (r) { return teamLinkHtml(r.teamId, r.team); };
+    return '<div class="day-leaders-grid">' + SEASON_LEADER_ORDER.map(function (key) {
+      var meta = SEASON_LEADER_CATEGORIES[key];
+      var rows = data && data[key];
+      return leaderCardHtml(meta.label, rows, function (r) { return (r.value != null ? r.value : "-") + " " + meta.unit; }, subtitle, year);
+    }).join("") + "</div>";
+  }
+  function topPerformersShellHtml(tab, year, bodyHtml) {
+    return '<section class="panel day-leaders-panel"><div class="day-leaders-header"><h2>Top Performers</h2>' +
+      '<div class="leader-tabs">' +
+      '<button type="button" class="leader-tab-btn' + (tab === "today" ? " active" : "") + '" data-leader-tab="today">Today</button>' +
+      '<button type="button" class="leader-tab-btn' + (tab === "season" ? " active" : "") + '" data-leader-tab="season">Season</button>' +
+      "</div>" +
+      (tab === "season" ? '<select id="leader-year" class="leader-year-select" aria-label="Season">' + yearOptionsHtml(year) + "</select>" : "") +
+      "</div>" + bodyHtml + "</section>";
+  }
+
+  // --------------------------------------------------------------------------
+  // Router - tiny hash router, no dependencies.
+  // --------------------------------------------------------------------------
+  function parseHash() {
+    var raw = (location.hash || "#/scores").slice(1);
+    var split = raw.split("?");
+    var segments = split[0].split("/").filter(Boolean);
+    var query = new URLSearchParams(split[1] || "");
+    return { segments: segments, query: query };
+  }
+  function navigate(path) { location.hash = path.charAt(0) === "#" ? path : "#" + path; }
+  function setActiveNav(routeName) {
+    document.querySelectorAll("#main-nav a[data-route]").forEach(function (a) {
+      var active = a.dataset.route === routeName;
+      a.classList.toggle("active", active);
+      if (active) a.setAttribute("aria-current", "page"); else a.removeAttribute("aria-current");
+    });
+  }
+
+  var root = document.getElementById("app-root");
+  var currentCleanup = null;
+
+  function handleRoute() {
+    var parsed = parseHash();
+    var routeName = parsed.segments[0] || "scores";
+    if (typeof currentCleanup === "function") { try { currentCleanup(); } catch (e) {} currentCleanup = null; }
+    var view = VIEWS[routeName] || VIEWS.scores;
+    var result = view(root, parsed.segments.slice(1), parsed.query);
+    if (result && typeof result.then === "function") {
+      result.then(function (cleanup) { if (typeof cleanup === "function") currentCleanup = cleanup; });
+    } else if (typeof result === "function") {
+      currentCleanup = result;
+    }
+  }
+
+  // --------------------------------------------------------------------------
+  // View: Scores
+  // --------------------------------------------------------------------------
+  function scoresView(root, segments) {
+    setActiveNav("scores");
+    var date = segments[0] ? fromDateKey(segments[0]) : new Date();
+
+    root.innerHTML =
+      '<section class="view-header"><h1>Scores &amp; Schedule</h1></section>' +
+      '<div class="date-picker">' +
+      '<button type="button" class="date-nav-btn" id="date-prev" aria-label="Previous day">&#8592;</button>' +
+      '<div class="date-picker-current"><span class="date-heading">' + formatDateHeading(date) + (isSameDay(date, new Date()) ? ' <span class="today-pill">Today</span>' : "") + '</span>' +
+      '<input type="date" id="date-input" value="' + toDateKey(date) + '" aria-label="Pick a date" /></div>' +
+      '<button type="button" class="date-nav-btn" id="date-next" aria-label="Next day">&#8594;</button>' +
+      '<button type="button" class="today-btn" id="date-today">Today</button>' +
+      "</div>" +
+      '<div class="filter-bar"><label>Conference<select id="conf-filter"><option value="">All Conferences</option></select></label></div>' +
+      '<div id="day-leaders-slot"></div>' +
+      '<div id="games-grid" class="games-grid">' + loadingHtml("Loading games...") + "</div>";
+
+    root.querySelector("#date-prev").addEventListener("click", function () { navigate("/scores/" + toDateKey(addDays(date, -1))); });
+    root.querySelector("#date-next").addEventListener("click", function () { navigate("/scores/" + toDateKey(addDays(date, 1))); });
+    root.querySelector("#date-today").addEventListener("click", function () { navigate("/scores/" + toDateKey(new Date())); });
+    root.querySelector("#date-input").addEventListener("change", function (e) { if (e.target.value) navigate("/scores/" + e.target.value); });
+
+    var gridEl = root.querySelector("#games-grid");
+    var leadersEl = root.querySelector("#day-leaders-slot");
+    var confSelect = root.querySelector("#conf-filter");
+
+    // Game cards are plain divs (not <a>) so the team names inside can be
+    // their own links to the team page - clicking anywhere else on the card
+    // goes to the box score, via this one delegated handler.
+    gridEl.addEventListener("click", function (e) {
+      if (e.target.closest(".team-row-link")) return; // let the team link navigate itself
+      var card = e.target.closest(".game-card");
+      if (card) navigate("/game/" + encodeURIComponent(card.dataset.gameId));
+    });
+    gridEl.addEventListener("keydown", function (e) {
+      if (e.key !== "Enter" && e.key !== " ") return;
+      if (e.target.closest(".team-row-link")) return;
+      var card = e.target.closest(".game-card");
+      if (card) { e.preventDefault(); navigate("/game/" + encodeURIComponent(card.dataset.gameId)); }
+    });
+    var timer = null;
+    var leadersRequestId = 0;
+    var seasonRequestId = 0;
+    var leaderTab = "today";
+    var leaderYear = DEFAULT_YEAR;
+    var todayHasStarted = null; // null = still loading today's games
+    var todayLeadersData = null;
+    var seasonLeadersData = null;
+    var seasonLoadedForYear = null;
+
+    var oddsRequestId = 0;
+    var lastGames = [];
+    var teamConfMap = {};
+    var selectedConf = "";
+
+    getStandings(DEFAULT_YEAR).then(function (standings) {
+      teamConfMap = standings.teamConfMap || {};
+      var confNames = sortConferences(Object.keys(standings.byConf));
+      confSelect.innerHTML = '<option value="">All Conferences</option>' + confNames.map(function (c) { return '<option value="' + escapeHtml(c) + '">' + escapeHtml(c) + "</option>"; }).join("");
+    }).catch(function () { /* non-fatal - filter just stays "All" */ });
+    confSelect.addEventListener("change", function (e) {
+      selectedConf = e.target.value;
+      renderGrid(lastGames);
+      renderLeadersPanel(); // Top Performers is scoped to the same conference filter
+    });
+
+    // Applies the Scores page's conference filter to a Top Performers list too,
+    // so switching to e.g. "Big Ten" only shows Big Ten players there as well
+    // (not just Big Ten games). Every leader row already carries teamId, so
+    // this is just a client-side filter over whatever's already been fetched -
+    // no extra requests needed when the dropdown changes.
+    function filterRowsByConf(rows) {
+      if (!selectedConf || !rows) return rows;
+      return rows.filter(function (r) { return teamConfMap[r.teamId] === selectedConf; });
+    }
+    function filterLeaderLists(lists) {
+      if (!lists || !selectedConf) return lists;
+      var out = {};
+      Object.keys(lists).forEach(function (k) { out[k] = filterRowsByConf(lists[k]); });
+      return out;
+    }
+
+    function renderGrid(games) {
+      lastGames = games;
+      var filtered = selectedConf ? games.filter(function (g) { return teamConfMap[g.home.id] === selectedConf || teamConfMap[g.away.id] === selectedConf; }) : games;
+      if (!filtered.length) { gridEl.innerHTML = emptyHtml(selectedConf ? "No " + selectedConf + " games on this date." : "No games scheduled for this date."); return; }
+      var sorted = filtered.slice().sort(function (a, b) { return (a.date ? a.date.getTime() : 0) - (b.date ? b.date.getTime() : 0); });
+      gridEl.innerHTML = '<div class="game-grid-inner">' + sorted.map(gameCardHtml).join("") + "</div>";
+      refreshOdds(sorted); // re-populate spread badges for whatever's now shown (cheap - fetchJson caches per game)
+    }
+
+    function refreshOdds(games) {
+      var thisRequest = ++oddsRequestId;
+      games.forEach(function (g) {
+        getGameOdds(g.id).then(function (odds) {
+          if (thisRequest !== oddsRequestId || !odds) return;
+          var slot = gridEl.querySelector('[data-game-id="' + g.id + '"] [data-odds-slot]');
+          if (slot) slot.innerHTML = oddsSlotHtml(odds, g);
+        });
+      });
+    }
+
+    function bindLeaderControls() {
+      leadersEl.querySelectorAll("[data-leader-tab]").forEach(function (btn) {
+        btn.addEventListener("click", function () {
+          if (btn.dataset.leaderTab === leaderTab) return;
+          leaderTab = btn.dataset.leaderTab;
+          renderLeadersPanel();
+        });
+      });
+      var yearSel = leadersEl.querySelector("#leader-year");
+      if (yearSel) {
+        yearSel.addEventListener("change", function (e) {
+          leaderYear = Number(e.target.value);
+          seasonLeadersData = null;
+          seasonLoadedForYear = null;
+          renderLeadersPanel();
+        });
+      }
+    }
+
+    function renderLeadersPanel() {
+      var body;
+      if (leaderTab === "today") {
+        body = todayHasStarted == null ? loadingHtml("Loading games...")
+          : !todayHasStarted ? emptyHtml("No games have started yet today.")
+          : todayLeadersData ? todayLeadersGridHtml(filterLeaderLists(todayLeadersData))
+          : loadingHtml("Finding today's top performers...");
+      } else {
+        if (seasonLoadedForYear === leaderYear && seasonLeadersData) {
+          body = seasonLeadersGridHtml(filterLeaderLists(seasonLeadersData), leaderYear);
+        } else {
+          body = loadingHtml("Loading " + leaderYear + " season leaders...");
+          loadSeasonLeaders();
+        }
+      }
+      leadersEl.innerHTML = topPerformersShellHtml(leaderTab, leaderYear, body);
+      bindLeaderControls();
+    }
+
+    function loadSeasonLeaders() {
+      var year = leaderYear;
+      var thisRequest = ++seasonRequestId;
+      getSeasonLeaders(year, 2).then(function (data) {
+        if (thisRequest !== seasonRequestId || leaderYear !== year) return;
+        seasonLeadersData = data;
+        seasonLoadedForYear = year;
+        if (leaderTab === "season") renderLeadersPanel();
+      }).catch(function () {
+        if (thisRequest !== seasonRequestId || leaderYear !== year) return;
+        if (leaderTab === "season") {
+          leadersEl.innerHTML = topPerformersShellHtml(leaderTab, leaderYear, errorHtml({ message: "Couldn't load season leaders." }));
+          bindLeaderControls();
+        }
+      });
+    }
+
+    function refreshDayLeaders(games) {
+      todayHasStarted = games.some(function (g) { return g.status.state !== "pre"; });
+      if (!todayHasStarted) {
+        todayLeadersData = null;
+        if (leaderTab === "today") renderLeadersPanel();
+        return;
+      }
+      var thisRequest = ++leadersRequestId;
+      computeDayLeaders(games).then(function (lists) {
+        if (thisRequest !== leadersRequestId) return; // a newer date/refresh has since superseded this one
+        todayLeadersData = lists;
+        if (leaderTab === "today") renderLeadersPanel();
+      }).catch(function () {
+        if (thisRequest !== leadersRequestId) return;
+        todayLeadersData = null; // non-fatal - the games grid is the important part, just drop the leader lists
+        if (leaderTab === "today") renderLeadersPanel();
+      });
+    }
+
+    function refresh(showLoading) {
+      if (showLoading) gridEl.innerHTML = loadingHtml("Loading games...");
+      renderLeadersPanel(); // show the panel + tabs right away so Season is reachable while today's games load
+      return getScoreboard(date).then(function (games) {
+        renderGrid(games); // also (re)fetches odds badges for whatever's shown
+        refreshDayLeaders(games);
+        var anyLive = games.some(function (g) { return g.status.state === "in"; });
+        if (timer) clearTimeout(timer);
+        if (anyLive) timer = setTimeout(function () { refresh(false); }, 20000);
+      }).catch(function (err) { gridEl.innerHTML = errorHtml(err); });
+    }
+
+    return refresh(true).then(function () {
+      return function cleanup() { if (timer) clearTimeout(timer); };
+    });
+  }
+
+  // --------------------------------------------------------------------------
+  // View: Game detail / box score
+  // --------------------------------------------------------------------------
+  var CATEGORY_COLUMNS = {
+    passing: { title: "Passing", headers: ["Player", "C/ATT", "YDS", "PCT", "TD", "INT"], row: function (p) { return [p.name, p.completions + "/" + p.attempts, p.yards, p.completionPct != null ? p.completionPct + "%" : "-", p.touchdowns, p.interceptions]; } },
+    rushing: { title: "Rushing", headers: ["Player", "CAR", "YDS", "AVG", "TD"], row: function (p) { return [p.name, p.carries, p.yards, p.yardsPerCarry != null ? p.yardsPerCarry : "-", p.touchdowns]; } },
+    receiving: { title: "Receiving", headers: ["Player", "REC", "YDS", "AVG", "TD"], row: function (p) { return [p.name, p.receptions, p.yards, p.yardsPerReception != null ? p.yardsPerReception : "-", p.touchdowns]; } },
+  };
+
+  function teamHeaderHtml(team, align) {
+    var logo = logoHtml(team.logo, team.abbreviation, "team-logo-lg");
+    var score = team.score != null ? '<span class="matchup-score' + (team.winner ? " is-winner" : "") + '">' + team.score + "</span>" : "";
+    var info = (align === "away" ? logo : "") +
+      '<div class="matchup-team-info"><div class="matchup-team-name">' + (team.rank ? '<span class="team-rank">#' + team.rank + "</span>" : "") + escapeHtml(team.name) + '</div><div class="matchup-team-record">' + escapeHtml(recordText(team.record)) + "</div></div>" +
+      (align === "home" ? logo : "");
+    return '<div class="matchup-team matchup-' + align + '"><a class="matchup-team-link" href="#/team/' + encodeURIComponent(team.id) + '">' + info + "</a>" + score + "</div>";
+  }
+  function linescoreTableHtml(away, home) {
+    var periods = Math.max((away.linescores || []).length, (home.linescores || []).length, 4);
+    var headerCells = "";
+    for (var i = 0; i < periods; i++) headerCells += "<th>" + (i < 4 ? i + 1 : "OT") + "</th>";
+    function rowCells(team) { var cells = ""; for (var i = 0; i < periods; i++) cells += "<td>" + escapeHtml(team.linescores && team.linescores[i] != null ? team.linescores[i] : "-") + "</td>"; return cells; }
+    return '<table class="linescore-table"><thead><tr><th>Team</th>' + headerCells + "<th>Final</th></tr></thead><tbody>" +
+      "<tr><td class=\"linescore-team\">" + escapeHtml(away.shortName || away.name) + "</td>" + rowCells(away) + '<td class="linescore-final">' + (away.score != null ? away.score : "-") + "</td></tr>" +
+      "<tr><td class=\"linescore-team\">" + escapeHtml(home.shortName || home.name) + "</td>" + rowCells(home) + '<td class="linescore-final">' + (home.score != null ? home.score : "-") + "</td></tr>" +
+      "</tbody></table>";
+  }
+  // Stats where the LOWER number is the better outcome (everything else on
+  // ESPN's team-stats list is "more is better": yards, first downs, time of
+  // possession, down-conversion rate, etc.).
+  var TEAM_STAT_LOWER_IS_BETTER = { turnovers: true, totalPenaltiesYards: true, penalties: true, interceptions: true, fumblesLost: true, sacksYardsLost: true };
+  // Parses an ESPN team-stat displayValue into a single comparable number.
+  // Handles plain numbers, "mm:ss" time-of-possession, and "made-attempted"
+  // style fractions (3rd/4th down efficiency -> success rate; penalties ->
+  // penalty yardage, since that's the more meaningful side of "5-45").
+  function teamStatComparableValue(key, displayValue) {
+    if (displayValue == null) return null;
+    var v = String(displayValue).trim();
+    var timeMatch = v.match(/^(\d+):(\d{2})$/);
+    if (timeMatch) return Number(timeMatch[1]) * 60 + Number(timeMatch[2]);
+    var fracMatch = v.match(/^(\d+)-(\d+)$/);
+    if (fracMatch) {
+      var a = Number(fracMatch[1]), b = Number(fracMatch[2]);
+      if (/penalt/i.test(key)) return b; // yards portion
+      return b > 0 ? a / b : 0; // down-efficiency success rate
+    }
+    var pctMatch = v.match(/\((\d+(?:\.\d+)?)%\)/); // e.g. "3/4 (75%)" -> 75
+    if (pctMatch) return Number(pctMatch[1]);
+    var num = parseFloat(v.replace(/[^0-9.\-]/g, ""));
+    return isNaN(num) ? null : num;
+  }
+  // --------------------------------------------------------------------------
+  // Three stats ESPN doesn't total for you, derived from data already on hand:
+  //
+  // - Yards Per Play: each side's own totalYards / offensive plays, reusing
+  //   the same play-count approach (rush attempts + pass attempts) that Team
+  //   Pace and Havoc Stats already use elsewhere in this app.
+  // - Explosive Plays: a count of rushes or completed passes gaining 20+
+  //   yards, read straight off each play's own "statYardage" and "type.text"
+  //   fields from the drive data already fetched for Play-by-Play below - no
+  //   need to parse yardage out of the play's text description. Penalty plays
+  //   and special-teams returns are excluded.
+  // - Red Zone Efficiency: drives that reached inside the opponent's 20 (a
+  //   drive's start/end yard line, on ESPN's own 0-100 "distance the offense
+  //   has driven toward its own end zone" scale, hitting 80+), and what share
+  //   of those trips ended in a score (TD or FG). A drive that briefly
+  //   crossed into the red zone but was pushed back out before it ended won't
+  //   be caught by this - only where the drive started or finished counts.
+  // --------------------------------------------------------------------------
+  var EXPLOSIVE_PLAY_YARDS = 20;
+  var RED_ZONE_YARD_LINE = 80;
+  function isExplosivePlay(play) {
+    if (!play || play.isPenalty || play.yards == null || play.yards < EXPLOSIVE_PLAY_YARDS) return false;
+    var t = play.typeText || "";
+    return /^Rush/i.test(t) || /Pass Reception/i.test(t) || /Passing Touchdown/i.test(t);
+  }
+  function computeDriveDerivedStats(drives, homeId, awayId) {
+    var sides = { home: { explosivePlays: 0, redZoneTrips: 0, redZoneScores: 0 }, away: { explosivePlays: 0, redZoneTrips: 0, redZoneScores: 0 } };
+    var matched = false;
+    (drives || []).forEach(function (d) {
+      var side = d.teamId != null && String(d.teamId) === String(homeId) ? "home" : (d.teamId != null && String(d.teamId) === String(awayId) ? "away" : null);
+      if (!side) return;
+      matched = true;
+      (d.plays || []).forEach(function (p) { if (isExplosivePlay(p)) sides[side].explosivePlays++; });
+      var reachedRedZone = (d.startYardLine != null && d.startYardLine >= RED_ZONE_YARD_LINE) || (d.endYardLine != null && d.endYardLine >= RED_ZONE_YARD_LINE);
+      if (reachedRedZone) {
+        sides[side].redZoneTrips++;
+        if (d.isScore) sides[side].redZoneScores++;
+      }
+    });
+    return matched ? sides : null;
+  }
+  function redZoneEffDisplay(s) {
+    if (!s || !s.redZoneTrips) return "No trips";
+    return s.redZoneScores + "/" + s.redZoneTrips + " (" + Math.round((s.redZoneScores / s.redZoneTrips) * 100) + "%)";
+  }
+  function teamStatsTableHtml(teamStats, away, home, drives) {
+    var awayStats = Object.assign({}, teamStats.away);
+    var homeStats = Object.assign({}, teamStats.home);
+    [[awayStats], [homeStats]].forEach(function (pair) {
+      var stats = pair[0];
+      var totalYards = stats.totalYards ? safeNum(stats.totalYards.displayValue, null) : null;
+      var plays = parsePlaysFromTeamStats(stats);
+      if (totalYards != null && plays) stats.yardsPerPlay = { label: "Yards Per Play", displayValue: (totalYards / plays).toFixed(1) };
+    });
+    var driveStats = computeDriveDerivedStats(drives, home.id, away.id);
+    if (driveStats) {
+      awayStats.explosivePlays = { label: "Explosive Plays (20+ yds)", displayValue: String(driveStats.away.explosivePlays) };
+      homeStats.explosivePlays = { label: "Explosive Plays (20+ yds)", displayValue: String(driveStats.home.explosivePlays) };
+      awayStats.redZoneEff = { label: "Red Zone Efficiency", displayValue: redZoneEffDisplay(driveStats.away) };
+      homeStats.redZoneEff = { label: "Red Zone Efficiency", displayValue: redZoneEffDisplay(driveStats.home) };
+    }
+    var keys = Object.keys(Object.assign({}, awayStats, homeStats));
+    if (!keys.length) return '<p class="muted">Team statistics aren\'t available for this game yet.</p>';
+    var rows = keys.map(function (key) {
+      var label = (awayStats[key] && awayStats[key].label) || (homeStats[key] && homeStats[key].label) || key;
+      var awayVal = awayStats[key] ? awayStats[key].displayValue : "-";
+      var homeVal = homeStats[key] ? homeStats[key].displayValue : "-";
+      var awayNum = teamStatComparableValue(key, awayVal);
+      var homeNum = teamStatComparableValue(key, homeVal);
+      var awayWins = false, homeWins = false;
+      if (awayNum != null && homeNum != null && awayNum !== homeNum) {
+        var lowerIsBetter = !!TEAM_STAT_LOWER_IS_BETTER[key];
+        var awayIsBetter = lowerIsBetter ? awayNum < homeNum : awayNum > homeNum;
+        awayWins = awayIsBetter; homeWins = !awayIsBetter;
+      }
+      return "<tr><td class=\"" + (awayWins ? "stat-winner" : "") + "\">" + escapeHtml(awayVal) + "</td><th>" + escapeHtml(label) + "</th><td class=\"" + (homeWins ? "stat-winner" : "") + "\">" + escapeHtml(homeVal) + "</td></tr>";
+    }).join("");
+    return '<table class="team-stats-table"><thead><tr><th>' + escapeHtml(away.shortName || away.name) + "</th><th></th><th>" + escapeHtml(home.shortName || home.name) + "</th></tr></thead><tbody>" + rows + "</tbody></table>";
+  }
+  // Player names in the box score link to the same Player page as everywhere
+  // else in the app (Today's Top Performers, leaderboards, etc.) - built from
+  // playerLinkHtml, just fed this table's own team context (name/id/logo)
+  // and the game's year, since the athlete row itself doesn't carry those.
+  function playerCategoryTableHtml(teamLabel, teamId, teamLogo, year, rows, categoryKey) {
+    var config = CATEGORY_COLUMNS[categoryKey];
+    if (!rows || !rows.length) return "";
+    var body = rows.map(function (r) {
+      var cols = config.row(r);
+      var nameCell = "<td>" + playerLinkHtml(Object.assign({}, r, { team: teamLabel, teamId: teamId, logo: teamLogo }), year) + "</td>";
+      var restCells = cols.slice(1).map(function (v) { return "<td>" + escapeHtml(v) + "</td>"; }).join("");
+      return "<tr>" + nameCell + restCells + "</tr>";
+    }).join("");
+    var heading = teamId ? '<a class="team-link" href="#/team/' + encodeURIComponent(teamId) + '">' + escapeHtml(teamLabel) + "</a>" : escapeHtml(teamLabel);
+    return '<div class="player-stat-block"><h4>' + heading + '</h4><table class="player-stats-table"><thead><tr>' + config.headers.map(function (h) { return "<th>" + escapeHtml(h) + "</th>"; }).join("") + "</tr></thead><tbody>" + body + "</tbody></table></div>";
+  }
+  function playerStatsSectionHtml(playerStats, away, home, year) {
+    var sections = ["passing", "rushing", "receiving"].map(function (cat) {
+      var awayHtml = playerCategoryTableHtml(away.shortName || away.name, away.id, away.logo, year, playerStats.away[cat], cat);
+      var homeHtml = playerCategoryTableHtml(home.shortName || home.name, home.id, home.logo, year, playerStats.home[cat], cat);
+      if (!awayHtml && !homeHtml) return "";
+      return '<div class="player-category"><h3>' + CATEGORY_COLUMNS[cat].title + '</h3><div class="player-category-grid">' + awayHtml + homeHtml + "</div></div>";
+    }).filter(Boolean).join("");
+    return sections || '<p class="muted">Individual player statistics aren\'t available for this game.</p>';
+  }
+  // --------------------------------------------------------------------------
+  // Head-to-Head panel (Game Detail page): computed straight from the home
+  // team's own past schedules (the same /teams/{id}/schedule endpoint used
+  // everywhere else), filtered down to games against today's opponent. ESPN
+  // doesn't have a free "series history" endpoint, so this is built the same
+  // way Schedule Advantages/Pace/Havoc were - honest, reproducible, just
+  // capped to a recent window rather than a full all-time series.
+  // --------------------------------------------------------------------------
+  var HEAD_TO_HEAD_SEASONS = 15;
+  function computeHeadToHead(homeId, awayId, throughYear) {
+    var years = [];
+    for (var y = throughYear; y > throughYear - HEAD_TO_HEAD_SEASONS; y--) years.push(y);
+    return Promise.all(years.map(function (y) { return getTeamSchedule(homeId, y).catch(function () { return null; }); })).then(function (schedules) {
+      var meetings = [];
+      schedules.forEach(function (sched) {
+        (sched && sched.games || []).forEach(function (g) {
+          if (!g.status.completed) return;
+          var homeIsA = String(g.home.id) === String(homeId);
+          var oppSide = homeIsA ? g.away : g.home;
+          var aSide = homeIsA ? g.home : g.away;
+          if (!oppSide || String(oppSide.id) !== String(awayId)) return;
+          meetings.push({ date: g.date, homeWasHome: homeIsA, homeScore: aSide.score, awayScore: oppSide.score, homeWon: !!aSide.winner, awayWon: !!oppSide.winner });
+        });
+      });
+      meetings.sort(function (a, b) { return (b.date ? b.date.getTime() : 0) - (a.date ? a.date.getTime() : 0); });
+      var homeWins = 0, awayWins = 0, ties = 0;
+      meetings.forEach(function (m) { if (m.homeWon) homeWins++; else if (m.awayWon) awayWins++; else ties++; });
+      return { meetings: meetings, homeWins: homeWins, awayWins: awayWins, ties: ties, seasons: HEAD_TO_HEAD_SEASONS };
+    });
+  }
+  function headToHeadRowHtml(m, homeName, awayName) {
+    var year = m.date ? m.date.getFullYear() : "-";
+    var result = m.homeWon ? homeName + " won" : m.awayWon ? awayName + " won" : "Tie";
+    var scoreText = m.homeWasHome ? m.homeScore + "-" + m.awayScore : m.awayScore + "-" + m.homeScore;
+    var siteNote = m.homeWasHome ? "" : " (at " + escapeHtml(awayName) + ")";
+    return "<tr><td>" + year + "</td><td>" + escapeHtml(result) + siteNote + "</td><td>" + scoreText + "</td></tr>";
+  }
+  function headToHeadHtml(data, homeName, awayName) {
+    if (!data || !data.meetings.length) return '<p class="muted">These teams haven\'t played each other in the last ' + HEAD_TO_HEAD_SEASONS + " seasons.</p>";
+    var summary = data.homeWins === data.awayWins
+      ? "Series tied " + data.homeWins + "-" + data.awayWins + (data.ties ? "-" + data.ties : "")
+      : (data.homeWins > data.awayWins ? homeName : awayName) + " leads " + Math.max(data.homeWins, data.awayWins) + "-" + Math.min(data.homeWins, data.awayWins) + (data.ties ? "-" + data.ties : "");
+    var head = "<thead><tr><th>Year</th><th>Result</th><th>Score</th></tr></thead>";
+    return '<p class="h2h-summary">' + escapeHtml(summary) + " over the last " + data.seasons + ' seasons.</p><table class="standings-table">' + head + "<tbody>" + data.meetings.map(function (m) { return headToHeadRowHtml(m, homeName, awayName); }).join("") + "</tbody></table>";
+  }
+
+  function scoringSummaryHtml(plays) {
+    if (!plays || !plays.length) return '<p class="muted">Scoring summary isn\'t available for this game.</p>';
+    return "<ul class=\"scoring-summary-list\">" + plays.map(function (p) {
+      var typeTag = p.scoringType ? '<span class="scoring-type-tag">' + escapeHtml(p.scoringType) + "</span> " : "";
+      return "<li><strong>" + escapeHtml(p.team || "") + "</strong> - " + typeTag + escapeHtml(p.description) + (p.period ? ' <span class="muted">(Q' + p.period + (p.time ? ", " + escapeHtml(p.time) : "") + ")</span>" : "") + "</li>";
+    }).join("") + "</ul>";
+  }
+
+  // --------------------------------------------------------------------------
+  // Play-by-Play panel (Game Detail page): every drive ESPN's summary
+  // returned, each collapsed into a <details> block (native, no JS needed)
+  // so a full game's worth of plays doesn't turn the page into an
+  // unreadable wall of text - only the most recent drive starts open,
+  // matching how ESPN's own play-by-play leads with what just happened.
+  // --------------------------------------------------------------------------
+  function drivePlayRowHtml(play) {
+    var clock = play.period ? "Q" + play.period + (play.time ? " " + escapeHtml(play.time) : "") : "";
+    return '<li class="pbp-play' + (play.scoringPlay ? " pbp-scoring" : "") + '">' +
+      (clock ? '<span class="pbp-clock">' + clock + "</span>" : "") +
+      '<span class="pbp-text">' + escapeHtml(play.text) + "</span></li>";
+  }
+  function driveBlockHtml(drive, isFirst) {
+    var headerBits = [drive.team, drive.description, drive.result].filter(Boolean).map(escapeHtml);
+    return "<details class=\"pbp-drive\"" + (isFirst ? " open" : "") + "><summary>" +
+      (headerBits.length ? headerBits.join(" &middot; ") : "Drive") +
+      (drive.isScore ? ' <span class="scoring-type-tag">SCORE</span>' : "") +
+      '</summary><ul class="pbp-play-list">' + drive.plays.map(drivePlayRowHtml).join("") + "</ul></details>";
+  }
+  function playByPlayHtml(drives) {
+    var withPlays = (drives || []).filter(function (d) { return d.plays && d.plays.length; });
+    if (!withPlays.length) return '<p class="muted">Play-by-play isn\'t available for this game yet.</p>';
+    var reversed = withPlays.slice().reverse(); // most recent drive first, like ESPN's own view
+    return '<div class="pbp-list">' + reversed.map(function (d, i) { return driveBlockHtml(d, i === 0); }).join("") + "</div>";
+  }
+
+  function gameView(root, segments) {
+    setActiveNav("scores");
+    var eventId = segments[0];
+    root.innerHTML = loadingHtml("Loading box score...");
+    if (!eventId) { root.innerHTML = errorHtml({ message: "No game selected." }); return; }
+
+    var timer = null;
+    var seasonStatsRequestId = 0;
+    var oddsRequestId = 0;
+    var weatherRequestId = 0;
+    var headToHeadHtmlCache = null; // rendered once per game view, reused across live-refresh cycles
+    function refresh() {
+      return getGameSummary(eventId).then(function (game) {
+        if (!game.home || !game.away) { root.innerHTML = '<a href="#/scores" class="back-link">&larr; Back to scores</a>' + errorHtml({ message: "This game's details couldn't be parsed." }); return; }
+        var badge = gameBadge(game.status);
+        var metaBits = [];
+        if (game.venue && game.venue.name) metaBits.push(escapeHtml(game.venue.name));
+        if (game.venue && game.venue.city) metaBits.push(escapeHtml((game.venue.city + ", " + (game.venue.state || "")).trim()));
+        if (game.attendance) metaBits.push("Attendance: " + Number(game.attendance).toLocaleString());
+        var isPreGame = game.status.state === "pre";
+        var gameYear = game.date ? game.date.getFullYear() : DEFAULT_YEAR;
+
+        root.innerHTML =
+          '<a href="#/scores" class="back-link">&larr; Back to scores</a>' +
+          '<section class="matchup-card"><div class="matchup-status"><span class="badge ' + badge.cls + '">' + escapeHtml(badge.label) + "</span><span>" + escapeHtml(statusLine(game.status, game.date)) + "</span></div>" +
+          '<div class="matchup-teams">' + teamHeaderHtml(game.away, "away") + '<span class="matchup-at">@</span>' + teamHeaderHtml(game.home, "home") + "</div>" +
+          (metaBits.length ? '<div class="matchup-meta">' + metaBits.join(" &middot; ") + ' <span id="weather-slot"></span></div>' : '<div class="matchup-meta"><span id="weather-slot"></span></div>') +
+          '<div id="odds-slot"></div>' +
+          "</section>" +
+          '<section class="panel"><h2>Head-to-Head</h2><div id="h2h-slot">' + (headToHeadHtmlCache || loadingHtml("Loading past meetings...")) + "</div></section>" +
+          '<section class="panel"><h2>Scoring by Quarter</h2>' + linescoreTableHtml(game.away, game.home) + "</section>" +
+          '<section class="panel"><h2>Team Statistics</h2>' + teamStatsTableHtml(game.teamStats, game.away, game.home, game.drives) + "</section>" +
+          '<section class="panel"><h2>' + (isPreGame ? "Season Stats" : "Player Statistics") + '</h2><div id="player-stats-slot">' +
+          (isPreGame ? loadingHtml("Loading season stats...") : playerStatsSectionHtml(game.playerStats, game.away, game.home, gameYear)) +
+          "</div></section>" +
+          '<section class="panel"><h2>Scoring Summary</h2>' + scoringSummaryHtml(game.scoringPlays) + "</section>" +
+          '<section class="panel"><h2>Play-by-Play</h2>' + playByPlayHtml(game.drives) + "</section>";
+
+        if (isPreGame) {
+          var thisRequest = ++seasonStatsRequestId;
+          Promise.all([
+            getTeamSeasonPlayerStats(game.away.id, DEFAULT_YEAR, 2).catch(function () { return null; }),
+            getTeamSeasonPlayerStats(game.home.id, DEFAULT_YEAR, 2).catch(function () { return null; }),
+          ]).then(function (res) {
+            if (thisRequest !== seasonStatsRequestId) return; // navigated to a different game since
+            var slot = root.querySelector("#player-stats-slot");
+            if (!slot) return;
+            var empty = { passing: [], rushing: [], receiving: [] };
+            var awayStats = res[0] || empty, homeStats = res[1] || empty;
+            if (!res[0] && !res[1]) { slot.innerHTML = '<p class="muted">Season stats aren\'t available for these teams yet.</p>'; return; }
+            slot.innerHTML = playerStatsSectionHtml({ away: awayStats, home: homeStats }, game.away, game.home);
+          });
+        }
+
+        var thisOddsRequest = ++oddsRequestId;
+        getGameOdds(eventId).then(function (odds) {
+          if (thisOddsRequest !== oddsRequestId || !odds) return;
+          var slot = root.querySelector("#odds-slot");
+          if (slot) slot.innerHTML = matchupOddsHtml(odds, game);
+        });
+
+        var thisWeatherRequest = ++weatherRequestId;
+        getGameWeather(game).then(function (weather) {
+          if (thisWeatherRequest !== weatherRequestId || !weather) return;
+          var slot = root.querySelector("#weather-slot");
+          if (slot) slot.innerHTML = weatherLineHtml(weather);
+        });
+
+        // Past-meetings history doesn't change mid-game, so it's only fetched
+        // once per game view rather than on every 15s live-refresh cycle -
+        // the cached HTML is re-embedded into the slot on every subsequent
+        // refresh instead (see the innerHTML build above).
+        if (headToHeadHtmlCache == null) {
+          var throughYear = game.date ? game.date.getFullYear() : DEFAULT_YEAR;
+          computeHeadToHead(game.home.id, game.away.id, throughYear).then(function (data) {
+            headToHeadHtmlCache = headToHeadHtml(data, game.home.shortName || game.home.name, game.away.shortName || game.away.name);
+            var slot = root.querySelector("#h2h-slot");
+            if (slot) slot.innerHTML = headToHeadHtmlCache;
+          }).catch(function () {
+            headToHeadHtmlCache = '<p class="muted">Head-to-head history isn\'t available right now.</p>';
+            var slot = root.querySelector("#h2h-slot");
+            if (slot) slot.innerHTML = headToHeadHtmlCache;
+          });
+        }
+
+        if (timer) clearTimeout(timer);
+        if (game.status.state === "in") timer = setTimeout(refresh, 15000);
+      }).catch(function (err) { root.innerHTML = '<a href="#/scores" class="back-link">&larr; Back to scores</a>' + errorHtml(err); });
+    }
+    return refresh().then(function () { return function cleanup() { if (timer) clearTimeout(timer); }; });
+  }
+
+  function yearOptionsHtml(selected) {
+    var out = "";
+    for (var i = 0; i < 6; i++) { var y = DEFAULT_YEAR - i; out += '<option value="' + y + '"' + (y === selected ? " selected" : "") + ">" + y + "</option>"; }
+    return out;
+  }
+
+  // --------------------------------------------------------------------------
+  // View: Standings
+  // --------------------------------------------------------------------------
+  function teamRowStandingsHtml(team) {
+    return "<tr><td>" + (team.rank || "-") + '</td><td class="team-cell"><a class="team-link" href="#/team/' + encodeURIComponent(team.teamId) + '">' + logoHtml(team.logo, team.team) + escapeHtml(team.team) + "</a></td><td>" + team.overall.w + "-" + team.overall.l + (team.overall.t ? "-" + team.overall.t : "") +
+      "</td><td>" + team.conf.w + "-" + team.conf.l + (team.conf.t ? "-" + team.conf.t : "") + "</td><td>" + winPctText(winPct(team.overall)) + "</td></tr>";
+  }
+  function conferenceTableHtml(teams) {
+    var head = "<thead><tr><th>Rank</th><th>Team</th><th>Overall</th><th>Conference</th><th>Win%</th></tr></thead>";
+    var sorted = teams.slice().sort(function (a, b) { return (a.rank || 99) - (b.rank || 99); });
+    return '<table class="standings-table">' + head + "<tbody>" + sorted.map(teamRowStandingsHtml).join("") + "</tbody></table>";
+  }
+
+  function standingsView(root, segments, query) {
+    setActiveNav("standings");
+    var state = { year: Number(query.get("year")) || DEFAULT_YEAR, conference: query.get("conf") || "" };
+
+    root.innerHTML =
+      '<section class="view-header"><h1>Conference Standings</h1></section>' +
+      '<div class="filter-bar"><label>Season<select id="filter-year">' + yearOptionsHtml(state.year) + "</select></label>" +
+      '<label>Conference<select id="filter-conf"><option value="">Loading...</option></select></label></div>' +
+      '<div id="standings-slot">' + loadingHtml("Loading standings...") + "</div>";
+
+    function syncUrl() { navigate("/standings?" + new URLSearchParams({ year: String(state.year), conf: state.conference }).toString()); }
+
+    var slot = root.querySelector("#standings-slot");
+    var confSelect = root.querySelector("#filter-conf");
+
+    return getStandings(state.year).then(function (standings) {
+      var confNames = sortConferences(Object.keys(standings.byConf));
+      if (!confNames.length) { slot.innerHTML = emptyHtml("No standings data for this season yet."); return; }
+      if (!state.conference || confNames.indexOf(state.conference) === -1) state.conference = confNames[0];
+
+      confSelect.innerHTML = confNames.map(function (c) { return '<option value="' + escapeHtml(c) + '"' + (c === state.conference ? " selected" : "") + ">" + escapeHtml(c) + "</option>"; }).join("");
+      slot.innerHTML = conferenceTableHtml(standings.byConf[state.conference] || []);
+
+      root.querySelector("#filter-year").addEventListener("change", function (e) { state.year = Number(e.target.value); state.conference = ""; syncUrl(); });
+      confSelect.addEventListener("change", function (e) { state.conference = e.target.value; syncUrl(); });
+    }).catch(function (err) { slot.innerHTML = errorHtml(err); });
+  }
+
+  // --------------------------------------------------------------------------
+  // View: Rankings (AP Top 25)
+  // --------------------------------------------------------------------------
+  function trendHtml(current, previous, trend) {
+    if (previous == null || previous === 0) return '<span class="muted">NR</span>';
+    var t = String(trend == null ? "" : trend);
+    if (t === "-" || t === "0") return '<span class="muted">–</span>';
+    if (t.charAt(0) === "-") return '<span class="trend-down">&#9660; ' + t.slice(1) + "</span>";
+    return '<span class="trend-up">&#9650; ' + t.replace(/^\+/, "") + "</span>";
+  }
+  function rankRowHtml(r) {
+    return "<tr><td class=\"rank-cell\">" + r.current + "</td><td class=\"trend-cell\">" + trendHtml(r.current, r.previous, r.trend) + '</td><td class="team-cell"><a class="team-link" href="#/team/' + encodeURIComponent(r.team.id) + '">' + logoHtml(r.team.logo, r.team.shortName) + escapeHtml(r.team.name) + "</a></td><td>" + escapeHtml(r.record || "-") +
+      "</td><td>" + (r.points != null ? r.points : "-") + "</td><td>" + (r.firstPlaceVotes || "-") + "</td></tr>";
+  }
+  function rankingsView(root, segments, query) {
+    setActiveNav("rankings");
+    root.innerHTML = '<section class="view-header"><h1>AP Top 25</h1></section><div id="rankings-slot">' + loadingHtml("Loading rankings...") + "</div>";
+    var slot = root.querySelector("#rankings-slot");
+    return getApPoll().then(function (poll) {
+      if (!poll || !poll.ranks.length) { slot.innerHTML = emptyHtml("No poll available right now."); return; }
+      var head = "<thead><tr><th>Rank</th><th></th><th>Team</th><th>Record</th><th>Points</th><th>1st</th></tr></thead>";
+      slot.innerHTML = (poll.week ? '<p class="muted small" style="margin-top:-8px;margin-bottom:14px;">' + escapeHtml(poll.week) + "</p>" : "") +
+        '<table class="standings-table rankings-table">' + head + "<tbody>" + poll.ranks.map(rankRowHtml).join("") + "</tbody></table>";
+    }).catch(function (err) { slot.innerHTML = errorHtml(err); });
+  }
+
+  // --------------------------------------------------------------------------
+  // View: Team page (season schedule + ATS record)
+  // --------------------------------------------------------------------------
+  function scheduleRowHtml(g, teamId, oddsInfo) {
+    var teamIsHome = String(g.home.id) === String(teamId);
+    var opp = teamIsHome ? g.away : g.home;
+    var self = teamIsHome ? g.home : g.away;
+    var atLabel = teamIsHome ? "vs" : "@";
+    var oppCell = '<a class="team-link" href="#/team/' + encodeURIComponent(opp.id) + '">' + logoHtml(opp.logo, opp.shortName) + escapeHtml(opp.shortName || opp.name) + "</a>";
+    var resultCell = "-", spreadCell = "-", atsCell = "-", ouCell = "-";
+    if (g.status.completed && self.score != null && opp.score != null) {
+      resultCell = '<span class="' + (self.winner ? "win-text" : "loss-text") + '">' + (self.winner ? "W " : "L ") + self.score + "-" + opp.score + "</span>";
+    } else if (g.status.state !== "pre") {
+      resultCell = escapeHtml(statusLine(g.status, g.date));
+    } else {
+      resultCell = g.date ? formatKickoff(g.date) : "TBD";
+    }
+    if (oddsInfo) {
+      var favSide = oddsInfo.homeFavorite ? "home" : (oddsInfo.awayFavorite ? "away" : null);
+      var teamSide = teamIsHome ? "home" : "away";
+      if (!favSide || !oddsInfo.spread) spreadCell = "PK";
+      else spreadCell = (favSide === teamSide ? "-" : "+") + oddsInfo.spread;
+      var coverer = spreadCoverage(oddsInfo, g);
+      if (coverer === "push") atsCell = '<span class="covered-tag covered-push">PUSH</span>';
+      else if (coverer) atsCell = coverer === teamSide ? '<span class="covered-tag">COVERED</span>' : '<span class="covered-tag not-covered">NO COVER</span>';
+      var totalRes = totalResult(oddsInfo, g);
+      if (totalRes === "push") ouCell = '<span class="covered-tag total-tag covered-push">PUSH</span>';
+      else if (totalRes) ouCell = '<span class="covered-tag total-tag">' + (totalRes === "over" ? "OVER" : "UNDER") + "</span>";
+      else if (oddsInfo.overUnder != null) ouCell = "O/U " + oddsInfo.overUnder;
+    }
+    return "<tr><td>" + (g.week || "-") + "</td><td>" + atLabel + " " + oppCell + '</td><td class="opp-cell">' + resultCell + "</td><td>" + spreadCell + "</td><td>" + atsCell + "</td><td>" + ouCell + "</td></tr>";
+  }
+  function atsSummaryHtml(summary) {
+    if (!summary.w && !summary.l && !summary.p) return "";
+    return '<div class="ats-summary"><div class="ats-stat"><div class="ats-stat-value">' + summary.w + "-" + summary.l + (summary.p ? "-" + summary.p : "") + '</div><div class="ats-stat-label">ATS this season</div></div></div>';
+  }
+  function injuryRowHtml(inj) {
+    var isHealthyLabel = /^active$/i.test(inj.status);
+    return "<tr><td>" + escapeHtml(inj.name) + "</td><td>" + escapeHtml(inj.position || "-") + '</td><td><span class="covered-tag injury-tag' + (isHealthyLabel ? " status-active" : "") + '">' + escapeHtml(inj.status) + "</span></td><td>" + (inj.date ? formatShortDate(new Date(inj.date)) : "-") + "</td></tr>";
+  }
+  function injuryReportHtml(list) {
+    if (!list.length) return '<p class="muted small">No injuries currently reported by ESPN for this team.</p>';
+    var head = "<thead><tr><th>Player</th><th>Pos</th><th>Status</th><th>Reported</th></tr></thead>";
+    return '<table class="standings-table injury-table">' + head + "<tbody>" + list.map(injuryRowHtml).join("") + "</tbody></table>";
+  }
+  function teamView(root, segments, query) {
+    setActiveNav("team");
+    var teamId = segments[0];
+    var year = Number(query.get("year")) || DEFAULT_YEAR;
+    if (!teamId) { root.innerHTML = errorHtml({ message: "No team selected." }); return; }
+    root.innerHTML = loadingHtml("Loading team schedule...");
+
+    return getTeamSchedule(teamId, year).then(function (data) {
+      var teamMeta = data.team || { id: teamId, name: "Team", logo: null, record: null };
+      root.innerHTML =
+        '<a href="#/scores" class="back-link">&larr; Back to scores</a>' +
+        '<div class="team-page-header">' + logoHtml(teamMeta.logo, teamMeta.name) + '<div><h1>' + escapeHtml(teamMeta.name) + "</h1>" +
+        (teamMeta.record ? '<div class="team-record-line">' + escapeHtml(teamMeta.record) + "</div>" : "") + "</div></div>" +
+        '<div class="filter-bar"><label>Season<select id="team-year">' + yearOptionsHtml(year) + "</select></label></div>" +
+        '<div id="ats-slot"></div>' +
+        '<section class="panel"><h2>Season Schedule</h2><div id="schedule-slot">' + loadingHtml("Loading odds...") + "</div></section>" +
+        '<section class="panel"><h2>Havoc Stats</h2><div id="havoc-slot">' + loadingHtml("Computing havoc rate from this season's box scores...") + "</div></section>" +
+        '<section class="panel"><h2>Injury Report</h2><div id="injury-slot">' + loadingHtml("Loading injury report...") + "</div></section>";
+
+      root.querySelector("#team-year").addEventListener("change", function (e) { navigate("/team/" + encodeURIComponent(teamId) + "?year=" + e.target.value); });
+
+      var injurySlot = root.querySelector("#injury-slot");
+      getTeamInjuries(teamId).then(function (list) {
+        if (injurySlot) injurySlot.innerHTML = injuryReportHtml(list);
+      }).catch(function () {
+        if (injurySlot) injurySlot.innerHTML = '<p class="muted small">Injury report isn\'t available right now.</p>';
+      });
+
+      var havocSlot = root.querySelector("#havoc-slot");
+      computeTeamHavoc(teamId, year).then(function (record) {
+        if (havocSlot) havocSlot.innerHTML = havocStatsHtml(record);
+      }).catch(function () {
+        if (havocSlot) havocSlot.innerHTML = '<p class="muted small">Havoc stats aren\'t available right now.</p>';
+      });
+
+      var games = data.games;
+      var scheduleSlot = root.querySelector("#schedule-slot");
+      var atsSlot = root.querySelector("#ats-slot");
+      if (!games.length) { scheduleSlot.innerHTML = emptyHtml("No schedule available for this season."); return; }
+
+      var completed = games.filter(function (g) { return g.status.completed; });
+      return Promise.all(completed.map(function (g) { return getGameOdds(g.id).catch(function () { return null; }); })).then(function (oddsList) {
+        var oddsByGame = {};
+        completed.forEach(function (g, i) { oddsByGame[g.id] = oddsList[i]; });
+
+        var w = 0, l = 0, p = 0;
+        completed.forEach(function (g) {
+          var odds = oddsByGame[g.id];
+          if (!odds) return;
+          var coverer = spreadCoverage(odds, g);
+          if (!coverer) return;
+          if (coverer === "push") { p++; return; }
+          var teamSide = String(g.home.id) === String(teamId) ? "home" : "away";
+          if (coverer === teamSide) w++; else l++;
+        });
+        atsSlot.innerHTML = atsSummaryHtml({ w: w, l: l, p: p });
+
+        var head = "<thead><tr><th>Wk</th><th>Opponent</th><th>Result</th><th>Spread</th><th>ATS</th><th>O/U</th></tr></thead>";
+        var rows = games.map(function (g) { return scheduleRowHtml(g, teamId, oddsByGame[g.id] || null); }).join("");
+        scheduleSlot.innerHTML = '<table class="standings-table schedule-table">' + head + "<tbody>" + rows + "</tbody></table>";
+      });
+    }).catch(function (err) { root.innerHTML = '<a href="#/scores" class="back-link">&larr; Back to scores</a>' + errorHtml(err); });
+  }
+
+  // --------------------------------------------------------------------------
+  // View: League-wide ATS leaderboard. Reuses the same schedule+odds pipeline
+  // as the Team page's ATS record, just run for every team in a conference at
+  // once (scoped to one conference at a time, like Standings, rather than all
+  // ~130 FBS teams - that would mean hundreds of schedule/odds fetches on one
+  // page load).
+  // --------------------------------------------------------------------------
+  function computeTeamAtsRecord(teamId, year) {
+    return getTeamSchedule(teamId, year).then(function (data) {
+      var completed = (data.games || []).filter(function (g) { return g.status.completed; });
+      if (!completed.length) return { w: 0, l: 0, p: 0, decided: 0 };
+      return Promise.all(completed.map(function (g) { return getGameOdds(g.id).catch(function () { return null; }); })).then(function (oddsList) {
+        var w = 0, l = 0, p = 0, decided = 0;
+        completed.forEach(function (g, i) {
+          var odds = oddsList[i];
+          if (!odds) return;
+          var coverer = spreadCoverage(odds, g);
+          if (!coverer) return;
+          decided++;
+          if (coverer === "push") { p++; return; }
+          var teamSide = String(g.home.id) === String(teamId) ? "home" : "away";
+          if (coverer === teamSide) w++; else l++;
+        });
+        return { w: w, l: l, p: p, decided: decided };
+      });
+    });
+  }
+  function atsLeaderRowHtml(row) {
+    var pct = row.decided ? row.w / row.decided : null;
+    return "<tr><td class=\"team-cell\"><a class=\"team-link\" href=\"#/team/" + encodeURIComponent(row.teamId) + "\">" + logoHtml(row.logo, row.team) + escapeHtml(row.team) + "</a></td><td>" +
+      row.w + "-" + row.l + (row.p ? "-" + row.p : "") + "</td><td>" + (pct == null ? "-" : winPctText(pct)) + "</td></tr>";
+  }
+  function atsLeaderboardTableHtml(rows) {
+    var head = "<thead><tr><th>Team</th><th>ATS Record</th><th>Cover %</th></tr></thead>";
+    var sorted = rows.slice().sort(function (a, b) {
+      var apct = a.decided ? a.w / a.decided : -1, bpct = b.decided ? b.w / b.decided : -1;
+      return bpct - apct || (b.w - a.w);
+    });
+    return '<table class="standings-table">' + head + "<tbody>" + sorted.map(atsLeaderRowHtml).join("") + "</tbody></table>";
+  }
+  function atsView(root, segments, query) {
+    setActiveNav("ats");
+    var state = { year: Number(query.get("year")) || DEFAULT_YEAR, conference: query.get("conf") || "" };
+
+    root.innerHTML =
+      '<section class="view-header"><h1>ATS Leaderboard</h1><p class="muted small">Which teams are covering the spread this season, computed game-by-game from ESPN\'s betting odds.</p></section>' +
+      '<div class="filter-bar"><label>Season<select id="filter-year">' + yearOptionsHtml(state.year) + "</select></label>" +
+      '<label>Conference<select id="filter-conf"><option value="">Loading...</option></select></label></div>' +
+      '<div id="ats-table-slot">' + loadingHtml("Loading conferences...") + "</div>";
+
+    function syncUrl() { navigate("/ats?" + new URLSearchParams({ year: String(state.year), conf: state.conference }).toString()); }
+
+    var slot = root.querySelector("#ats-table-slot");
+    var confSelect = root.querySelector("#filter-conf");
+
+    return getStandings(state.year).then(function (standings) {
+      var confNames = sortConferences(Object.keys(standings.byConf));
+      if (!confNames.length) { slot.innerHTML = emptyHtml("No conference data for this season yet."); return; }
+      if (!state.conference || confNames.indexOf(state.conference) === -1) state.conference = confNames[0];
+
+      confSelect.innerHTML = confNames.map(function (c) { return '<option value="' + escapeHtml(c) + '"' + (c === state.conference ? " selected" : "") + ">" + escapeHtml(c) + "</option>"; }).join("");
+      root.querySelector("#filter-year").addEventListener("change", function (e) { state.year = Number(e.target.value); state.conference = ""; syncUrl(); });
+      confSelect.addEventListener("change", function (e) { state.conference = e.target.value; syncUrl(); });
+
+      var teams = standings.byConf[state.conference] || [];
+      slot.innerHTML = loadingHtml("Computing ATS records from each team's completed games...");
+      return Promise.all(teams.map(function (t) {
+        return computeTeamAtsRecord(t.teamId, state.year)
+          .then(function (rec) { return { teamId: t.teamId, team: t.team, logo: t.logo, w: rec.w, l: rec.l, p: rec.p, decided: rec.decided }; })
+          .catch(function () { return { teamId: t.teamId, team: t.team, logo: t.logo, w: 0, l: 0, p: 0, decided: 0 }; });
+      })).then(function (rows) {
+        slot.innerHTML = rows.length ? atsLeaderboardTableHtml(rows) : emptyHtml("No teams found for this conference.");
+      });
+    }).catch(function (err) { slot.innerHTML = errorHtml(err); });
+  }
+
+  // --------------------------------------------------------------------------
+  // View: Schedule Advantages matrix - a from-scratch, ESPN-only take on the
+  // "schedule advantages" concept some betting/analytics sites publish (rest,
+  // travel, time zone, and elevation edges for each matchup). Those sites'
+  // own opponent-strength numbers are proprietary and there's no API for
+  // them, so this computes the same underlying signals independently from
+  // ESPN's schedule data plus free venue geocoding (for lat/lon, elevation,
+  // and time zone) - the badges won't match any other site's, but they're
+  // real, derived data, not a copy of anyone else's ratings.
+  //
+  //   +  this team had a meaningful rest-days edge over their opponent
+  //   -  this team had a meaningful rest-days disadvantage
+  //   T  long trip - 1500+ miles from the team's home venue
+  //   Z  a 2+ hour time zone change from the team's home zone
+  //   E  the game site sits 900+ feet above sea level
+  // --------------------------------------------------------------------------
+  var REST_ADVANTAGE_DAYS = 2;
+  var LONG_TRAVEL_MILES = 1500;
+  var TIMEZONE_CHANGE_MINUTES = 120;
+  var HIGH_ELEVATION_FEET = 900;
+
+  function buildRestDaysMap(games) {
+    var sorted = games.filter(function (g) { return g.date; }).slice().sort(function (a, b) { return a.date - b.date; });
+    var map = {};
+    for (var i = 0; i < sorted.length; i++) map[sorted[i].id] = i === 0 ? null : Math.round((sorted[i].date - sorted[i - 1].date) / 86400000);
+    return map;
+  }
+  function findHomeVenue(games, teamId) {
+    var homeGame = games.filter(function (g) { return g.venue && g.venue.city && String(g.home.id) === String(teamId); })[0];
+    return homeGame ? homeGame.venue : null;
+  }
+  function computeScheduleAdvantages(teamId, year) {
+    return getTeamSchedule(teamId, year).then(function (data) {
+      var games = data.games || [];
+      var restMap = buildRestDaysMap(games);
+      var homeVenue = findHomeVenue(games, teamId);
+      var homeGeoPromise = homeVenue ? geocodeCity(homeVenue.city, homeVenue.state) : Promise.resolve(null);
+
+      return homeGeoPromise.then(function (homeGeo) {
+        return Promise.all(games.map(function (g) {
+          var teamIsHome = String(g.home.id) === String(teamId);
+          var opponent = teamIsHome ? g.away : g.home;
+          var selfRest = restMap[g.id];
+
+          var oppRestPromise = (opponent && opponent.id)
+            ? getTeamSchedule(opponent.id, year).then(function (oppData) { return buildRestDaysMap(oppData.games || [])[g.id]; }).catch(function () { return undefined; })
+            : Promise.resolve(undefined);
+          var awayGeoPromise = (!teamIsHome && g.venue && g.venue.city) ? geocodeCity(g.venue.city, g.venue.state).catch(function () { return null; }) : Promise.resolve(null);
+
+          return Promise.all([oppRestPromise, awayGeoPromise]).then(function (res) {
+            var oppRest = res[0], awayGeo = res[1];
+            var badges = { rest: null, travel: false, tz: false, elevation: false };
+            if (selfRest != null && oppRest != null) {
+              var diff = selfRest - oppRest;
+              if (diff >= REST_ADVANTAGE_DAYS) badges.rest = "+";
+              else if (diff <= -REST_ADVANTAGE_DAYS) badges.rest = "-";
+            }
+            var siteGeo = teamIsHome ? homeGeo : awayGeo;
+            if (siteGeo && siteGeo.elevation != null && siteGeo.elevation * 3.28084 >= HIGH_ELEVATION_FEET) badges.elevation = true;
+            if (!teamIsHome && awayGeo && homeGeo) {
+              if (awayGeo.latitude != null && homeGeo.latitude != null) {
+                if (haversineMiles(homeGeo.latitude, homeGeo.longitude, awayGeo.latitude, awayGeo.longitude) >= LONG_TRAVEL_MILES) badges.travel = true;
+              }
+              if (awayGeo.timezone && homeGeo.timezone && g.date) {
+                var offA = utcOffsetMinutes(homeGeo.timezone, g.date), offB = utcOffsetMinutes(awayGeo.timezone, g.date);
+                if (offA != null && offB != null && Math.abs(offA - offB) >= TIMEZONE_CHANGE_MINUTES) badges.tz = true;
+              }
+            }
+            return { gameId: g.id, week: g.week, date: g.date, status: g.status, isHome: teamIsHome, opponent: opponent, badges: badges };
+          });
+        }));
+      });
+    });
+  }
+  function scheduleBadgesHtml(badges) {
+    var out = "";
+    if (badges.rest === "+") out += '<span class="sa-badge sa-plus" title="Rest advantage">+</span>';
+    else if (badges.rest === "-") out += '<span class="sa-badge sa-minus" title="Rest disadvantage">-</span>';
+    if (badges.travel) out += '<span class="sa-badge sa-travel" title="Long travel (1500+ mi)">T</span>';
+    if (badges.tz) out += '<span class="sa-badge sa-tz" title="Time zone change (2+ hr)">Z</span>';
+    if (badges.elevation) out += '<span class="sa-badge sa-elevation" title="High elevation (900+ ft)">E</span>';
+    return out;
+  }
+  function scheduleCellHtml(game) {
+    if (!game) return '<td class="sa-cell sa-bye">bye</td>';
+    var opp = game.opponent || {};
+    var oppLabel = opp.abbreviation || opp.shortName || opp.name || "?";
+    var oppCell = opp.id ? '<a class="team-link" href="#/team/' + encodeURIComponent(opp.id) + '">' + escapeHtml(oppLabel) + "</a>" : escapeHtml(oppLabel);
+    return '<td class="sa-cell"><div class="sa-opp">' + (game.isHome ? "" : "@") + oppCell + '</div><div class="sa-badges">' + (scheduleBadgesHtml(game.badges) || "&nbsp;") + "</div></td>";
+  }
+  function scheduleMatrixRowHtml(row, weeks) {
+    var cells = weeks.map(function (w) { return scheduleCellHtml(row.gamesByWeek[w]); }).join("");
+    return "<tr><td class=\"team-cell\"><a class=\"team-link\" href=\"#/team/" + encodeURIComponent(row.team.teamId) + "\">" + logoHtml(row.team.logo, row.team.team) + escapeHtml(row.team.team) + "</a></td>" + cells + "</tr>";
+  }
+  function scheduleMatrixTableHtml(rows, weeks) {
+    var head = "<thead><tr><th>Team</th>" + weeks.map(function (w) { return "<th>Wk " + w + "</th>"; }).join("") + "</tr></thead>";
+    return '<table class="standings-table schedule-matrix-table">' + head + "<tbody>" + rows.map(function (r) { return scheduleMatrixRowHtml(r, weeks); }).join("") + "</tbody></table>";
+  }
+  var SCHEDULE_ADVANTAGES_LEGEND =
+    '<div class="sa-legend">' +
+    '<span><span class="sa-badge sa-plus">+</span> Rest advantage</span>' +
+    '<span><span class="sa-badge sa-minus">-</span> Rest disadvantage</span>' +
+    '<span><span class="sa-badge sa-travel">T</span> Long travel (1500+ mi)</span>' +
+    '<span><span class="sa-badge sa-tz">Z</span> Time zone change (2+ hr)</span>' +
+    '<span><span class="sa-badge sa-elevation">E</span> High elevation (900+ ft)</span>' +
+    "</div>";
+  function scheduleAdvantagesView(root, segments, query) {
+    setActiveNav("advantages");
+    var state = { year: Number(query.get("year")) || DEFAULT_YEAR, conference: query.get("conf") || "" };
+
+    root.innerHTML =
+      '<section class="view-header"><h1>Schedule Advantages</h1><p class="muted small">Rest, travel, time zone, and elevation edges for each matchup - computed independently from ESPN\'s schedule data and venue geocoding. Not affiliated with, and won\'t match, similar ratings from other sites.</p></section>' +
+      '<div class="filter-bar"><label>Season<select id="filter-year">' + yearOptionsHtml(state.year) + "</select></label>" +
+      '<label>Conference<select id="filter-conf"><option value="">Loading...</option></select></label></div>' +
+      SCHEDULE_ADVANTAGES_LEGEND +
+      '<div id="sa-table-slot">' + loadingHtml("Loading conferences...") + "</div>";
+
+    function syncUrl() { navigate("/advantages?" + new URLSearchParams({ year: String(state.year), conf: state.conference }).toString()); }
+
+    var slot = root.querySelector("#sa-table-slot");
+    var confSelect = root.querySelector("#filter-conf");
+
+    return getStandings(state.year).then(function (standings) {
+      var confNames = sortConferences(Object.keys(standings.byConf));
+      if (!confNames.length) { slot.innerHTML = emptyHtml("No conference data for this season yet."); return; }
+      if (!state.conference || confNames.indexOf(state.conference) === -1) state.conference = confNames[0];
+
+      confSelect.innerHTML = confNames.map(function (c) { return '<option value="' + escapeHtml(c) + '"' + (c === state.conference ? " selected" : "") + ">" + escapeHtml(c) + "</option>"; }).join("");
+      root.querySelector("#filter-year").addEventListener("change", function (e) { state.year = Number(e.target.value); state.conference = ""; syncUrl(); });
+      confSelect.addEventListener("change", function (e) { state.conference = e.target.value; syncUrl(); });
+
+      var teams = standings.byConf[state.conference] || [];
+      slot.innerHTML = loadingHtml("Computing rest, travel, and elevation for every game - this fetches every team's schedule and geocodes their venues, so the first load can take a little while.");
+      return Promise.all(teams.map(function (t) {
+        return computeScheduleAdvantages(t.teamId, state.year)
+          .then(function (games) { return { team: t, games: games }; })
+          .catch(function () { return { team: t, games: [] }; });
+      })).then(function (results) {
+        var weekSet = {};
+        results.forEach(function (r) { r.games.forEach(function (g) { if (g.week != null) weekSet[g.week] = true; }); });
+        var weeks = Object.keys(weekSet).map(Number).sort(function (a, b) { return a - b; });
+        if (!weeks.length) { slot.innerHTML = emptyHtml("No schedule data available for this conference yet."); return; }
+        var rows = results.map(function (r) {
+          var gamesByWeek = {};
+          r.games.forEach(function (g) { if (g.week != null) gamesByWeek[g.week] = g; });
+          return { team: r.team, gamesByWeek: gamesByWeek };
+        });
+        slot.innerHTML = scheduleMatrixTableHtml(rows, weeks);
+      });
+    }).catch(function (err) { slot.innerHTML = errorHtml(err); });
+  }
+
+  // --------------------------------------------------------------------------
+  // View: Team Pace leaderboard - another from-scratch equivalent of a
+  // metric some analytics sites publish (like Fourth & Short's pace
+  // rankings). Their "situation-adjusted" pace is a proprietary machine-
+  // learning estimate with no public data source, and splitting pace by
+  // game situation (leading/trailing, first 3 drives, variance) would need
+  // full play-by-play timing for every play of every game - too heavy for a
+  // static page. What's reproducible from ESPN's box scores alone is raw
+  // seasonal tempo: seconds of possession per offensive play, summed across
+  // a team's whole season (possessionTime / (rushingAttempts + pass
+  // attempts) from each completed game's team stats). Lower = faster tempo.
+  // --------------------------------------------------------------------------
+  function parsePossessionSeconds(display) {
+    if (!display) return null;
+    var parts = String(display).split(":").map(Number);
+    if (parts.length !== 2 || parts.some(function (n) { return isNaN(n); })) return null;
+    return parts[0] * 60 + parts[1];
+  }
+  function parsePlaysFromTeamStats(stats) {
+    if (!stats) return null;
+    var rushAtt = stats.rushingAttempts ? safeNum(stats.rushingAttempts.displayValue, null) : null;
+    var compParts = stats.completionAttempts ? String(stats.completionAttempts.displayValue).split("/") : null;
+    var passAtt = compParts && compParts.length === 2 ? safeNum(compParts[1], null) : null;
+    if (rushAtt == null || passAtt == null) return null;
+    return rushAtt + passAtt;
+  }
+  function computeTeamPace(teamId, year) {
+    return getTeamSchedule(teamId, year).then(function (data) {
+      var completed = (data.games || []).filter(function (g) { return g.status.completed; });
+      if (!completed.length) return { secondsPerPlay: null, plays: 0, games: 0 };
+      return Promise.all(completed.map(function (g) { return getGameSummary(g.id, true).catch(function () { return null; }); })).then(function (summaries) {
+        var totalPlays = 0, totalSeconds = 0, games = 0;
+        summaries.forEach(function (summary, i) {
+          if (!summary || !summary.teamStats) return;
+          var g = completed[i];
+          var teamIsHome = String(g.home.id) === String(teamId);
+          var stats = teamIsHome ? summary.teamStats.home : summary.teamStats.away;
+          var plays = parsePlaysFromTeamStats(stats);
+          var seconds = stats && stats.possessionTime ? parsePossessionSeconds(stats.possessionTime.displayValue) : null;
+          if (plays != null && plays > 0 && seconds != null) { totalPlays += plays; totalSeconds += seconds; games++; }
+        });
+        return { secondsPerPlay: totalPlays ? totalSeconds / totalPlays : null, plays: totalPlays, games: games };
+      });
+    });
+  }
+  // --------------------------------------------------------------------------
+  // Team page: Havoc Stats panel. Approximates the "havoc rate" metric popular
+  // on advanced-stats sites (share of an offense's plays that a defense blows
+  // up with a tackle-for-loss, a pass breakup, or a pick), split the same way
+  // fourthandshort.com splits it: a "front seven" share (tackles for loss,
+  // which already includes sacks) and a "defensive backs" share (passes
+  // defended + interceptions). We compute both directions - the team's own
+  // defense creating havoc, and its offense having havoc created against it -
+  // straight from ESPN's per-player box score stats, summed across every
+  // completed game this season, divided by the number of plays the defense
+  // actually faced (or the offense actually ran) in those same games.
+  //
+  // Two things we can't match: ESPN's college box scores don't break out
+  // forced fumbles as their own stat (fumbles are tracked as fumbles/lost/
+  // recovered, with no "forced by" attribution), so fumbles aren't part of
+  // this number the way they are in the classic havoc-rate formula. And
+  // fourthandshort's ratings are opponent-adjusted/proprietary; this is the
+  // raw, unadjusted rate instead.
+  // --------------------------------------------------------------------------
+  function sumDefensiveHavoc(playerCats) {
+    var tfl = 0, pd = 0, int_ = 0;
+    ((playerCats && playerCats.defensive) || []).forEach(function (row) { tfl += row.tacklesForLoss || 0; pd += row.passesDefended || 0; });
+    ((playerCats && playerCats.interceptions) || []).forEach(function (row) { int_ += row.interceptions || 0; });
+    return { tfl: tfl, pd: pd, int: int_ };
+  }
+  function computeTeamHavoc(teamId, year) {
+    return getTeamSchedule(teamId, year).then(function (data) {
+      var completed = (data.games || []).filter(function (g) { return g.status.completed; });
+      if (!completed.length) return null;
+      return Promise.all(completed.map(function (g) { return getGameSummary(g.id, true).catch(function () { return null; }); })).then(function (summaries) {
+        var created = { tfl: 0, pd: 0, int: 0, plays: 0 };
+        var allowed = { tfl: 0, pd: 0, int: 0, plays: 0 };
+        var games = 0;
+        summaries.forEach(function (summary, i) {
+          if (!summary || !summary.teamStats || !summary.playerStats) return;
+          var g = completed[i];
+          var side = String(g.home.id) === String(teamId) ? "home" : "away";
+          var oppSide = side === "home" ? "away" : "home";
+          var ownPlays = parsePlaysFromTeamStats(summary.teamStats[side]);
+          var oppPlays = parsePlaysFromTeamStats(summary.teamStats[oppSide]);
+          if (ownPlays == null || oppPlays == null) return;
+          var ownHavoc = sumDefensiveHavoc(summary.playerStats[side]);
+          var oppHavoc = sumDefensiveHavoc(summary.playerStats[oppSide]);
+          created.tfl += ownHavoc.tfl; created.pd += ownHavoc.pd; created.int += ownHavoc.int; created.plays += oppPlays;
+          allowed.tfl += oppHavoc.tfl; allowed.pd += oppHavoc.pd; allowed.int += oppHavoc.int; allowed.plays += ownPlays;
+          games++;
+        });
+        function rates(bucket) {
+          if (!bucket.plays) return { total: null, frontSeven: null, db: null };
+          return { total: (bucket.tfl + bucket.pd + bucket.int) / bucket.plays, frontSeven: bucket.tfl / bucket.plays, db: (bucket.pd + bucket.int) / bucket.plays };
+        }
+        return { created: rates(created), allowed: rates(allowed), games: games };
+      });
+    });
+  }
+  function havocPctCell(v) { return v == null ? "-" : (v * 100).toFixed(1) + "%"; }
+  function havocStatsHtml(record) {
+    if (!record || !record.games) return '<p class="muted small">Not enough completed games yet to compute havoc stats.</p>';
+    var head = "<thead><tr><th></th><th>Total Havoc</th><th>Front Seven</th><th>Defensive Backs</th></tr></thead>";
+    var rows = "<tr><td>Defense (created)</td><td>" + havocPctCell(record.created.total) + "</td><td>" + havocPctCell(record.created.frontSeven) + "</td><td>" + havocPctCell(record.created.db) + "</td></tr>" +
+      "<tr><td>Offense (allowed)</td><td>" + havocPctCell(record.allowed.total) + "</td><td>" + havocPctCell(record.allowed.frontSeven) + "</td><td>" + havocPctCell(record.allowed.db) + "</td></tr>";
+    return '<table class="standings-table havoc-table">' + head + "<tbody>" + rows + "</tbody></table>" +
+      '<p class="muted small">Share of plays disrupted with a tackle for loss, a pass breakup, or an interception - "Defense" is havoc this team\'s defense created, "Offense" is havoc its offense had created against it. Front Seven/Defensive Backs mirror the split on fourthandshort.com; forced fumbles aren\'t included since ESPN\'s box scores don\'t track them separately, and this is a raw rate rather than an opponent-adjusted one. Based on ' + record.games + " completed game" + (record.games === 1 ? "" : "s") + " this season.</p>";
+  }
+  function paceRowHtml(row) {
+    return "<tr><td class=\"team-cell\"><a class=\"team-link\" href=\"#/team/" + encodeURIComponent(row.teamId) + "\">" + logoHtml(row.logo, row.team) + escapeHtml(row.team) + "</a></td><td>" +
+      (row.secondsPerPlay == null ? "-" : row.secondsPerPlay.toFixed(2)) + "</td><td>" + row.plays + "</td><td>" + row.games + "</td></tr>";
+  }
+  function paceTableHtml(rows) {
+    var head = "<thead><tr><th>Team</th><th>Sec / Play</th><th>Plays</th><th>Games</th></tr></thead>";
+    var sorted = rows.slice().sort(function (a, b) {
+      if (a.secondsPerPlay == null) return 1;
+      if (b.secondsPerPlay == null) return -1;
+      return a.secondsPerPlay - b.secondsPerPlay;
+    });
+    return '<table class="standings-table">' + head + "<tbody>" + sorted.map(paceRowHtml).join("") + "</tbody></table>";
+  }
+  function paceView(root, segments, query) {
+    setActiveNav("pace");
+    var state = { year: Number(query.get("year")) || DEFAULT_YEAR, conference: query.get("conf") || "" };
+
+    root.innerHTML =
+      '<section class="view-header"><h1>Team Pace</h1><p class="muted small">Seconds of possession per offensive play, season-to-date, computed straight from ESPN\'s box scores - fastest tempo first. This is a raw pace number only; it doesn\'t adjust for game situation the way some other sites\' proprietary ratings do.</p></section>' +
+      '<div class="filter-bar"><label>Season<select id="filter-year">' + yearOptionsHtml(state.year) + "</select></label>" +
+      '<label>Conference<select id="filter-conf"><option value="">Loading...</option></select></label></div>' +
+      '<div id="pace-table-slot">' + loadingHtml("Loading conferences...") + "</div>";
+
+    function syncUrl() { navigate("/pace?" + new URLSearchParams({ year: String(state.year), conf: state.conference }).toString()); }
+
+    var slot = root.querySelector("#pace-table-slot");
+    var confSelect = root.querySelector("#filter-conf");
+
+    return getStandings(state.year).then(function (standings) {
+      var confNames = sortConferences(Object.keys(standings.byConf));
+      if (!confNames.length) { slot.innerHTML = emptyHtml("No conference data for this season yet."); return; }
+      if (!state.conference || confNames.indexOf(state.conference) === -1) state.conference = confNames[0];
+
+      confSelect.innerHTML = confNames.map(function (c) { return '<option value="' + escapeHtml(c) + '"' + (c === state.conference ? " selected" : "") + ">" + escapeHtml(c) + "</option>"; }).join("");
+      root.querySelector("#filter-year").addEventListener("change", function (e) { state.year = Number(e.target.value); state.conference = ""; syncUrl(); });
+      confSelect.addEventListener("change", function (e) { state.conference = e.target.value; syncUrl(); });
+
+      var teams = standings.byConf[state.conference] || [];
+      slot.innerHTML = loadingHtml("Computing pace from each team's completed games...");
+      return Promise.all(teams.map(function (t) {
+        return computeTeamPace(t.teamId, state.year)
+          .then(function (rec) { return { teamId: t.teamId, team: t.team, logo: t.logo, secondsPerPlay: rec.secondsPerPlay, plays: rec.plays, games: rec.games }; })
+          .catch(function () { return { teamId: t.teamId, team: t.team, logo: t.logo, secondsPerPlay: null, plays: 0, games: 0 }; });
+      })).then(function (rows) {
+        slot.innerHTML = rows.length ? paceTableHtml(rows) : emptyHtml("No teams found for this conference.");
+      });
+    }).catch(function (err) { slot.innerHTML = errorHtml(err); });
+  }
+
+  // --------------------------------------------------------------------------
+  // Header team search - typeahead over every FBS team (built from the same
+  // standings data as the Standings page), so you can jump straight to any
+  // team's schedule/ATS page from anywhere in the app.
+  // --------------------------------------------------------------------------
+  function initTeamSearch() {
+    var wrap = document.getElementById("team-search");
+    var input = document.getElementById("team-search-input");
+    var resultsEl = document.getElementById("team-search-results");
+    if (!wrap || !input || !resultsEl) return;
+
+    var teamsPromise = null;
+    function ensureTeams() {
+      if (!teamsPromise) teamsPromise = getAllTeams(DEFAULT_YEAR).catch(function () { return []; });
+      return teamsPromise;
+    }
+    function closeResults() { resultsEl.hidden = true; resultsEl.innerHTML = ""; }
+    function renderResults(matches) {
+      if (!matches.length) { resultsEl.innerHTML = '<div class="team-search-empty">No teams found</div>'; resultsEl.hidden = false; return; }
+      resultsEl.innerHTML = matches.slice(0, 8).map(function (t) {
+        return '<a href="#/team/' + encodeURIComponent(t.id) + '" class="team-search-item">' + logoHtml(t.logo, t.abbreviation || t.name) + "<span>" + escapeHtml(t.name) + "</span></a>";
+      }).join("");
+      resultsEl.hidden = false;
+    }
+    input.addEventListener("input", function () {
+      var q = input.value.trim().toLowerCase();
+      if (!q) { closeResults(); return; }
+      ensureTeams().then(function (teams) {
+        if (input.value.trim().toLowerCase() !== q) return; // input changed while we were loading
+        var matches = teams.filter(function (t) {
+          return (t.name && t.name.toLowerCase().indexOf(q) !== -1) || (t.abbreviation && t.abbreviation.toLowerCase().indexOf(q) !== -1);
+        });
+        renderResults(matches);
+      });
+    });
+    input.addEventListener("keydown", function (e) {
+      if (e.key === "Escape") { input.blur(); closeResults(); }
+      else if (e.key === "Enter") {
+        var first = resultsEl.querySelector(".team-search-item");
+        if (first) { e.preventDefault(); first.click(); }
+      }
+    });
+    resultsEl.addEventListener("click", function () { input.value = ""; closeResults(); });
+    document.addEventListener("click", function (e) { if (!wrap.contains(e.target)) closeResults(); });
+  }
+
+  var VIEWS = { scores: scoresView, game: gameView, standings: standingsView, rankings: rankingsView, team: teamView, player: playerView, ats: atsView, advantages: scheduleAdvantagesView, pace: paceView, "line-movement": lineMovementView, "weekly-recap": weeklyRecapView };
+
+  window.addEventListener("hashchange", handleRoute);
+  initTeamSearch();
+  handleRoute();
+})();
+</script>
+</body>
+</html>
