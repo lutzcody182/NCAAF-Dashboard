@@ -63,6 +63,8 @@ a { color: inherit; }
 .badge-final { background:var(--final); color:#fff; }
 .badge-upcoming { background:var(--upcoming); color:#fff; }
 .badge-postponed { background:var(--text-muted); color:var(--surface); }
+.badge-upset { background:var(--live); color:#fff; }
+.badge-cover { background:var(--win); color:#fff; }
 .game-status-line { color:var(--text-muted); font-weight:600; }
 .game-card-teams { display:flex; flex-direction:column; gap:8px; }
 .team-row { display:grid; grid-template-columns:1fr auto auto; align-items:center; gap:8px; }
@@ -158,6 +160,8 @@ th, td { padding:6px 8px; text-align:center; border-bottom:1px solid var(--borde
 .filter-bar { display:flex; gap:16px; flex-wrap:wrap; margin-bottom:16px; background:var(--surface); border:1px solid var(--border); border-radius:var(--radius); padding:12px 16px; }
 .filter-bar label { display:flex; flex-direction:column; gap:4px; font-size:.78rem; color:var(--text-muted); font-weight:600; }
 .filter-bar select { padding:6px 8px; border-radius:6px; border:1px solid var(--border); background:var(--surface); color:var(--text); font-size:.85rem; }
+.recap-section { margin-bottom:28px; }
+.recap-section h2 { font-size:1.1rem; margin:0 0 6px; }
 .division-heading { margin:18px 0 8px; font-size:.95rem; }
 .division-heading:first-of-type { margin-top:0; }
 .rankings-table .rank-cell { font-weight:700; width:32px; }
@@ -227,6 +231,7 @@ th, td { padding:6px 8px; text-align:center; border-bottom:1px solid var(--borde
         <a href="#/advantages" data-route="advantages">Schedule Advantages</a>
         <a href="#/pace" data-route="pace">Team Pace</a>
         <a href="#/line-movement" data-route="line-movement">Line Movement</a>
+        <a href="#/weekly-recap" data-route="weekly-recap">Weekly Recap</a>
       </nav>
     </div>
   </header>
@@ -411,7 +416,7 @@ th, td { padding:6px 8px; text-align:center; border-bottom:1px solid var(--borde
       date: event.date ? new Date(event.date) : null,
       status: normalizeStatus(comp.status),
       broadcast: names[0] || event.broadcast || null,
-      venue: comp.venue ? { name: comp.venue.fullName || null, city: comp.venue.address && comp.venue.address.city, state: comp.venue.address && comp.venue.address.state } : null,
+      venue: comp.venue ? { id: comp.venue.id || null, name: comp.venue.fullName || null, city: comp.venue.address && comp.venue.address.city, state: comp.venue.address && comp.venue.address.state } : null,
       situation: normalizeSituation(comp.situation),
       home: home, away: away,
     };
@@ -783,6 +788,168 @@ th, td { padding:6px 8px; text-align:center; border-bottom:1px solid var(--borde
     var label = WMO_WEATHER_LABEL[weather.code] || "";
     var precip = weather.precipProb != null && weather.precipProb >= 20 ? ", " + weather.precipProb + "% precip" : "";
     return '<span class="weather-line">' + icon + " " + weather.tempF + "°F" + (label ? " " + escapeHtml(label) : "") + escapeHtml(precip) + "</span>";
+  }
+
+  // --------------------------------------------------------------------------
+  // Weekly Recap: three small "fun stats" ranked across the same weekly game
+  // window used elsewhere (roughly three days back through four days ahead) -
+  // Upset Alert / Chaos Meter, Biggest Comeback of the Week, and Weirdest
+  // Weather Games. Each is computed honestly from data ESPN/Open-Meteo already
+  // expose; nothing here is a proprietary rating.
+  // --------------------------------------------------------------------------
+
+  // Upset Alert / Chaos Meter: which underdogs beat the spread by the widest
+  // margin this week, using the same current-odds resource as getGameOdds.
+  // dogCoverMargin > 0 means the underdog covered (or won outright); games
+  // where the favorite covered are excluded entirely rather than ranked low,
+  // since "chalk held" isn't a chaos story.
+  function computeUpsets(completedGames) {
+    return Promise.all(completedGames.map(function (g) {
+      return getGameOdds(g.id).then(function (odds) {
+        if (!odds || !odds.spread || (!odds.homeFavorite && !odds.awayFavorite)) return null;
+        var favSide = odds.homeFavorite ? "home" : "away";
+        var dogSide = favSide === "home" ? "away" : "home";
+        var margin = g.home.score - g.away.score; // + = home won by this much
+        var favMargin = favSide === "home" ? margin : -margin; // + = favorite won by this much, - = favorite lost outright
+        var dogCoverMargin = Number((odds.spread - favMargin).toFixed(1)); // + = underdog beat the spread by this many points
+        if (dogCoverMargin <= 0) return null;
+        return { game: g, odds: odds, favSide: favSide, dogSide: dogSide, favMargin: favMargin, dogCoverMargin: dogCoverMargin, outright: favMargin < 0 };
+      }).catch(function () { return null; });
+    })).then(function (results) {
+      return results.filter(Boolean).sort(function (a, b) { return b.dogCoverMargin - a.dogCoverMargin; });
+    });
+  }
+  function upsetRowHtml(rank, entry) {
+    var g = entry.game;
+    var fav = g[entry.favSide], dog = g[entry.dogSide];
+    var matchup = teamLinkHtml(g.away.id, g.away.shortName || g.away.name) + ' <span class="muted">@</span> ' + teamLinkHtml(g.home.id, g.home.shortName || g.home.name);
+    var scoreText = g.away.score + "-" + g.home.score;
+    var tag = entry.outright ? '<span class="badge badge-upset">UPSET</span>' : '<span class="badge badge-cover">COVERED</span>';
+    var resultText = (dog.shortName || dog.name) + (entry.outright ? " won outright" : " covered") + " by " + entry.dogCoverMargin.toFixed(1) + " pts";
+    return "<tr><td>" + rank + "</td><td>" + gameCellLinkHtml(g, matchup) + "</td><td>" + scoreText + "</td><td>" + escapeHtml((fav.shortName || fav.name) + " -" + entry.odds.spread) + "</td>" +
+      "<td>" + tag + " <span class=\"small\">" + escapeHtml(resultText) + "</span></td></tr>";
+  }
+  function upsetTableHtml(entries, limit) {
+    if (!entries.length) return emptyHtml("No underdogs beat the spread this week (or no odds were on file for these games).");
+    var head = "<thead><tr><th>#</th><th>Game</th><th>Score</th><th>Spread</th><th>Result</th></tr></thead>";
+    return '<table class="standings-table upset-table">' + head + "<tbody>" + entries.slice(0, limit).map(function (e, i) { return upsetRowHtml(i + 1, e); }).join("") + "</tbody></table>";
+  }
+
+  // Biggest Comeback of the Week: uses the per-quarter linescores ESPN already
+  // sends on the bulk scoreboard endpoint (confirmed non-empty for completed
+  // games), so this needs no extra per-game fetch. Tracks each team's largest
+  // deficit measured at the end of any quarter and flags a comeback when the
+  // team that faced the bigger deficit ultimately won - ranked by deficit
+  // size. A deficit that opened and closed again within a single quarter
+  // won't be caught, since this only checks end-of-quarter running totals.
+  function computeComebacks(completedGames) {
+    var results = completedGames.map(function (g) {
+      var winnerSide = g.home.winner ? "home" : (g.away.winner ? "away" : null);
+      if (!winnerSide) return null;
+      var loserSide = winnerSide === "home" ? "away" : "home";
+      var winLines = g[winnerSide].linescores, loseLines = g[loserSide].linescores;
+      var n = Math.min(winLines.length, loseLines.length);
+      if (n < 2) return null; // need at least two quarters on file to show a mid-game deficit
+      var winCum = 0, loseCum = 0, maxDeficit = 0;
+      for (var i = 0; i < n; i++) {
+        winCum += safeNum(winLines[i], 0);
+        loseCum += safeNum(loseLines[i], 0);
+        var deficit = loseCum - winCum; // + = the eventual winner was behind by this much at this point
+        if (deficit > maxDeficit) maxDeficit = deficit;
+      }
+      if (maxDeficit <= 0) return null; // never trailed - not a comeback
+      return { game: g, winnerSide: winnerSide, loserSide: loserSide, maxDeficit: maxDeficit };
+    }).filter(Boolean);
+    return results.sort(function (a, b) { return b.maxDeficit - a.maxDeficit; });
+  }
+  function comebackRowHtml(rank, entry) {
+    var g = entry.game;
+    var winner = g[entry.winnerSide];
+    var matchup = teamLinkHtml(g.away.id, g.away.shortName || g.away.name) + ' <span class="muted">@</span> ' + teamLinkHtml(g.home.id, g.home.shortName || g.home.name);
+    var scoreText = g.away.score + "-" + g.home.score;
+    return "<tr><td>" + rank + "</td><td>" + gameCellLinkHtml(g, matchup) + "</td><td>" + scoreText + "</td>" +
+      "<td>" + escapeHtml(winner.shortName || winner.name) + " trailed by " + entry.maxDeficit + "</td></tr>";
+  }
+  function comebackTableHtml(entries, limit) {
+    if (!entries.length) return emptyHtml("No team came back from a quarter-end deficit to win this week.");
+    var head = "<thead><tr><th>#</th><th>Game</th><th>Final</th><th>Comeback</th></tr></thead>";
+    return '<table class="standings-table comeback-table">' + head + "<tbody>" + entries.slice(0, limit).map(function (e, i) { return comebackRowHtml(i + 1, e); }).join("") + "</tbody></table>";
+  }
+
+  // Weirdest Weather Games: reuses getGameWeather across the week's games and
+  // ranks by a simple extremity score - very cold or very hot temperatures,
+  // high precipitation odds, and severe conditions (heavy rain/snow,
+  // thunderstorms) all add points. Indoor games and games missing venue/city
+  // data are skipped by getGameWeather itself (returns null).
+  function weatherWeirdScore(w) {
+    var score = 0;
+    if (w.tempF <= 20) score += 32 - w.tempF;
+    else if (w.tempF >= 95) score += w.tempF - 90;
+    if (w.precipProb != null && w.precipProb >= 50) score += w.precipProb / 5;
+    if (w.code != null && [65, 75, 82, 95, 96, 99].indexOf(w.code) !== -1) score += 15;
+    else if (w.code != null && [55, 61, 63, 71, 73].indexOf(w.code) !== -1) score += 6;
+    return score;
+  }
+  function computeWeirdWeather(games) {
+    return Promise.all(games.map(function (g) {
+      return getGameWeather(g).then(function (w) { return w ? { game: g, weather: w } : null; }).catch(function () { return null; });
+    })).then(function (results) {
+      var list = results.filter(Boolean);
+      list.forEach(function (e) { e.weirdScore = weatherWeirdScore(e.weather); });
+      return list.filter(function (e) { return e.weirdScore > 0; }).sort(function (a, b) { return b.weirdScore - a.weirdScore; });
+    });
+  }
+  function weatherRowHtml(rank, entry) {
+    var g = entry.game;
+    var matchup = teamLinkHtml(g.away.id, g.away.shortName || g.away.name) + ' <span class="muted">@</span> ' + teamLinkHtml(g.home.id, g.home.shortName || g.home.name);
+    var venueText = g.venue && g.venue.name ? g.venue.name : "-";
+    return "<tr><td>" + rank + "</td><td>" + gameCellLinkHtml(g, matchup) + "</td><td>" + escapeHtml(venueText) + "</td><td>" + weatherLineHtml(entry.weather) + "</td></tr>";
+  }
+  function weatherTableHtml(entries, limit) {
+    if (!entries.length) return emptyHtml("No notably wild weather found for this week's outdoor games.");
+    var head = "<thead><tr><th>#</th><th>Game</th><th>Venue</th><th>Forecast</th></tr></thead>";
+    return '<table class="standings-table weather-table">' + head + "<tbody>" + entries.slice(0, limit).map(function (e, i) { return weatherRowHtml(i + 1, e); }).join("") + "</tbody></table>";
+  }
+
+  function weeklyRecapView(root) {
+    setActiveNav("weekly-recap");
+    root.innerHTML =
+      '<section class="view-header"><h1>Weekly Recap</h1><p class="muted small">Upsets, comebacks, and wild weather from this week\'s games (roughly three days back through four days ahead).</p></section>' +
+      '<section class="recap-section"><h2>Upset Alert / Chaos Meter</h2><p class="muted small">Underdogs that beat the spread this week, ranked by how many points they covered by. Needs a completed game with both a final score and a pre-game spread on file.</p><div id="upset-slot">' + loadingHtml("Loading this week's games...") + "</div></section>" +
+      '<section class="recap-section"><h2>Biggest Comeback of the Week</h2><p class="muted small">The largest deficit a team overcame to win, measured at the end of any quarter - a bigger deficit that closed before the quarter ended won\'t be caught.</p><div id="comeback-slot">' + loadingHtml("Loading...") + "</div></section>" +
+      '<section class="recap-section"><h2>Weirdest Weather Games</h2><p class="muted small">Outdoor games with the most extreme forecast conditions near kickoff.</p><div id="weather-slot">' + loadingHtml("Loading...") + "</div></section>";
+
+    var upsetSlot = root.querySelector("#upset-slot");
+    var comebackSlot = root.querySelector("#comeback-slot");
+    var weatherSlot = root.querySelector("#weather-slot");
+
+    var days = [];
+    for (var i = -3; i <= 3; i++) days.push(addDays(new Date(), i));
+    return Promise.all(days.map(function (d) { return getScoreboard(d).catch(function () { return []; }); })).then(function (lists) {
+      var seen = {}, games = [];
+      lists.forEach(function (list) { list.forEach(function (g) { if (!seen[g.id]) { seen[g.id] = true; games.push(g); } }); });
+      if (!games.length) {
+        var msg = emptyHtml("No games found for this window.");
+        upsetSlot.innerHTML = msg; comebackSlot.innerHTML = msg; weatherSlot.innerHTML = msg;
+        return;
+      }
+      var completed = games.filter(function (g) { return g.status.completed && g.home.score != null && g.away.score != null; });
+
+      // Comebacks are computed straight from data already on `games` - no extra fetch.
+      comebackSlot.innerHTML = comebackTableHtml(computeComebacks(completed), 10);
+
+      upsetSlot.innerHTML = loadingHtml("Checking spreads for " + completed.length + " completed games...");
+      var upsetPromise = computeUpsets(completed).then(function (entries) {
+        upsetSlot.innerHTML = upsetTableHtml(entries, 10);
+      }).catch(function (err) { upsetSlot.innerHTML = errorHtml(err); });
+
+      weatherSlot.innerHTML = loadingHtml("Checking forecasts for " + games.length + " games...");
+      var weatherPromise = computeWeirdWeather(games).then(function (entries) {
+        weatherSlot.innerHTML = weatherTableHtml(entries, 10);
+      }).catch(function (err) { weatherSlot.innerHTML = errorHtml(err); });
+
+      return Promise.all([upsetPromise, weatherPromise]);
+    }).catch(function (err) { upsetSlot.innerHTML = errorHtml(err); comebackSlot.innerHTML = errorHtml(err); weatherSlot.innerHTML = errorHtml(err); });
   }
 
   // A couple of small geo helpers shared by weather and the schedule
@@ -2729,7 +2896,7 @@ th, td { padding:6px 8px; text-align:center; border-bottom:1px solid var(--borde
     document.addEventListener("click", function (e) { if (!wrap.contains(e.target)) closeResults(); });
   }
 
-  var VIEWS = { scores: scoresView, game: gameView, standings: standingsView, rankings: rankingsView, team: teamView, player: playerView, ats: atsView, advantages: scheduleAdvantagesView, pace: paceView, "line-movement": lineMovementView };
+  var VIEWS = { scores: scoresView, game: gameView, standings: standingsView, rankings: rankingsView, team: teamView, player: playerView, ats: atsView, advantages: scheduleAdvantagesView, pace: paceView, "line-movement": lineMovementView, "weekly-recap": weeklyRecapView };
 
   window.addEventListener("hashchange", handleRoute);
   initTeamSearch();
