@@ -288,6 +288,32 @@ th, td { padding:6px 8px; text-align:center; border-bottom:1px solid var(--borde
   }
 
   // --------------------------------------------------------------------------
+  // Shared "All Conferences" option for every conference-scoped leaderboard
+  // (Standings, ATS, Schedule Advantages, Team Pace, Turnover Margin, Team
+  // Splits, 3rd Down/Red Zone) - lets every team from every conference show
+  // up bunched into one table/matrix instead of picking one conference at a
+  // time. Cheap on Standings (already fetched in one bulk request), but on
+  // the box-score-driven leaderboards this means fetching every completed
+  // game for every FBS team (100+ teams), so those pages show an explicit
+  // "this may take a while" loading message when it's selected.
+  // --------------------------------------------------------------------------
+  var ALL_CONFERENCES = "__all__";
+  function isValidConferenceChoice(value, confNames) { return value === ALL_CONFERENCES || confNames.indexOf(value) !== -1; }
+  function conferenceOptionsHtml(confNames, selected) {
+    return '<option value="' + ALL_CONFERENCES + '"' + (selected === ALL_CONFERENCES ? " selected" : "") + ">All Conferences</option>" +
+      confNames.map(function (c) { return '<option value="' + escapeHtml(c) + '"' + (c === selected ? " selected" : "") + ">" + escapeHtml(c) + "</option>"; }).join("");
+  }
+  function teamsForConferenceChoice(standings, conference) {
+    if (conference !== ALL_CONFERENCES) return standings.byConf[conference] || [];
+    var all = [];
+    sortConferences(Object.keys(standings.byConf)).forEach(function (c) { all = all.concat(standings.byConf[c]); });
+    return all;
+  }
+  function allConferencesLoadingNote(state, teams) {
+    return state.conference === ALL_CONFERENCES ? " Showing all " + teams.length + " FBS teams across every conference - this fetches each team's data individually, so it can take a good while to finish loading." : "";
+  }
+
+  // --------------------------------------------------------------------------
   // Tiny fetch layer: in-memory + localStorage caching (with a TTL) and
   // in-flight de-duping, so navigating around the app doesn't hammer ESPN or
   // redo work. Falls back gracefully if localStorage is unavailable (private
@@ -2507,10 +2533,10 @@ th, td { padding:6px 8px; text-align:center; border-bottom:1px solid var(--borde
     return getStandings(state.year).then(function (standings) {
       var confNames = sortConferences(Object.keys(standings.byConf));
       if (!confNames.length) { slot.innerHTML = emptyHtml("No standings data for this season yet."); return; }
-      if (!state.conference || confNames.indexOf(state.conference) === -1) state.conference = confNames[0];
+      if (!isValidConferenceChoice(state.conference, confNames)) state.conference = confNames[0];
 
-      confSelect.innerHTML = confNames.map(function (c) { return '<option value="' + escapeHtml(c) + '"' + (c === state.conference ? " selected" : "") + ">" + escapeHtml(c) + "</option>"; }).join("");
-      slot.innerHTML = conferenceTableHtml(standings.byConf[state.conference] || []);
+      confSelect.innerHTML = conferenceOptionsHtml(confNames, state.conference);
+      slot.innerHTML = conferenceTableHtml(teamsForConferenceChoice(standings, state.conference));
 
       root.querySelector("#filter-year").addEventListener("change", function (e) { state.year = Number(e.target.value); state.conference = ""; syncUrl(); });
       confSelect.addEventListener("change", function (e) { state.conference = e.target.value; syncUrl(); });
@@ -2750,14 +2776,14 @@ th, td { padding:6px 8px; text-align:center; border-bottom:1px solid var(--borde
     return getStandings(state.year).then(function (standings) {
       var confNames = sortConferences(Object.keys(standings.byConf));
       if (!confNames.length) { slot.innerHTML = emptyHtml("No conference data for this season yet."); return; }
-      if (!state.conference || confNames.indexOf(state.conference) === -1) state.conference = confNames[0];
+      if (!isValidConferenceChoice(state.conference, confNames)) state.conference = confNames[0];
 
-      confSelect.innerHTML = confNames.map(function (c) { return '<option value="' + escapeHtml(c) + '"' + (c === state.conference ? " selected" : "") + ">" + escapeHtml(c) + "</option>"; }).join("");
+      confSelect.innerHTML = conferenceOptionsHtml(confNames, state.conference);
       root.querySelector("#filter-year").addEventListener("change", function (e) { state.year = Number(e.target.value); state.conference = ""; syncUrl(); });
       confSelect.addEventListener("change", function (e) { state.conference = e.target.value; syncUrl(); });
 
-      var teams = standings.byConf[state.conference] || [];
-      slot.innerHTML = loadingHtml("Computing betting records from each team's completed games...");
+      var teams = teamsForConferenceChoice(standings, state.conference);
+      slot.innerHTML = loadingHtml("Computing betting records from each team's completed games..." + allConferencesLoadingNote(state, teams));
       return Promise.all(teams.map(function (t) {
         return computeTeamBettingRecord(t.teamId, state.year)
           .then(function (rec) { return { teamId: t.teamId, team: t.team, logo: t.logo, ats: rec.ats, ou: rec.ou, pointDiff: rec.pointDiff }; })
@@ -2894,14 +2920,14 @@ th, td { padding:6px 8px; text-align:center; border-bottom:1px solid var(--borde
     return getStandings(state.year).then(function (standings) {
       var confNames = sortConferences(Object.keys(standings.byConf));
       if (!confNames.length) { slot.innerHTML = emptyHtml("No conference data for this season yet."); return; }
-      if (!state.conference || confNames.indexOf(state.conference) === -1) state.conference = confNames[0];
+      if (!isValidConferenceChoice(state.conference, confNames)) state.conference = confNames[0];
 
-      confSelect.innerHTML = confNames.map(function (c) { return '<option value="' + escapeHtml(c) + '"' + (c === state.conference ? " selected" : "") + ">" + escapeHtml(c) + "</option>"; }).join("");
+      confSelect.innerHTML = conferenceOptionsHtml(confNames, state.conference);
       root.querySelector("#filter-year").addEventListener("change", function (e) { state.year = Number(e.target.value); state.conference = ""; syncUrl(); });
       confSelect.addEventListener("change", function (e) { state.conference = e.target.value; syncUrl(); });
 
-      var teams = standings.byConf[state.conference] || [];
-      slot.innerHTML = loadingHtml("Computing rest, travel, and elevation for every game - this fetches every team's schedule and geocodes their venues, so the first load can take a little while.");
+      var teams = teamsForConferenceChoice(standings, state.conference);
+      slot.innerHTML = loadingHtml("Computing rest, travel, and elevation for every game - this fetches every team's schedule and geocodes their venues, so the first load can take a little while." + allConferencesLoadingNote(state, teams));
       return Promise.all(teams.map(function (t) {
         return computeScheduleAdvantages(t.teamId, state.year)
           .then(function (games) { return { team: t, games: games }; })
@@ -3075,14 +3101,14 @@ th, td { padding:6px 8px; text-align:center; border-bottom:1px solid var(--borde
     return getStandings(state.year).then(function (standings) {
       var confNames = sortConferences(Object.keys(standings.byConf));
       if (!confNames.length) { slot.innerHTML = emptyHtml("No conference data for this season yet."); return; }
-      if (!state.conference || confNames.indexOf(state.conference) === -1) state.conference = confNames[0];
+      if (!isValidConferenceChoice(state.conference, confNames)) state.conference = confNames[0];
 
-      confSelect.innerHTML = confNames.map(function (c) { return '<option value="' + escapeHtml(c) + '"' + (c === state.conference ? " selected" : "") + ">" + escapeHtml(c) + "</option>"; }).join("");
+      confSelect.innerHTML = conferenceOptionsHtml(confNames, state.conference);
       root.querySelector("#filter-year").addEventListener("change", function (e) { state.year = Number(e.target.value); state.conference = ""; syncUrl(); });
       confSelect.addEventListener("change", function (e) { state.conference = e.target.value; syncUrl(); });
 
-      var teams = standings.byConf[state.conference] || [];
-      slot.innerHTML = loadingHtml("Computing turnover margin, havoc rate, and penalties from each team's completed games...");
+      var teams = teamsForConferenceChoice(standings, state.conference);
+      slot.innerHTML = loadingHtml("Computing turnover margin, havoc rate, and penalties from each team's completed games..." + allConferencesLoadingNote(state, teams));
       return Promise.all(teams.map(function (t) {
         return computeTeamDiscipline(t.teamId, state.year)
           .then(function (rec) { return { teamId: t.teamId, team: t.team, logo: t.logo, margin: rec.margin, takeaways: rec.takeaways, giveaways: rec.giveaways, havocRate: rec.havocRate, penalties: rec.penalties, penaltyYards: rec.penaltyYards, games: rec.games }; })
@@ -3178,14 +3204,14 @@ th, td { padding:6px 8px; text-align:center; border-bottom:1px solid var(--borde
 
       var confNames = sortConferences(Object.keys(standings.byConf));
       if (!confNames.length) { slot.innerHTML = emptyHtml("No conference data for this season yet."); return; }
-      if (!state.conference || confNames.indexOf(state.conference) === -1) state.conference = confNames[0];
+      if (!isValidConferenceChoice(state.conference, confNames)) state.conference = confNames[0];
 
-      confSelect.innerHTML = confNames.map(function (c) { return '<option value="' + escapeHtml(c) + '"' + (c === state.conference ? " selected" : "") + ">" + escapeHtml(c) + "</option>"; }).join("");
+      confSelect.innerHTML = conferenceOptionsHtml(confNames, state.conference);
       root.querySelector("#filter-year").addEventListener("change", function (e) { state.year = Number(e.target.value); state.conference = ""; syncUrl(); });
       confSelect.addEventListener("change", function (e) { state.conference = e.target.value; syncUrl(); });
 
-      var teams = standings.byConf[state.conference] || [];
-      slot.innerHTML = loadingHtml("Computing situational records from each team's completed games...");
+      var teams = teamsForConferenceChoice(standings, state.conference);
+      slot.innerHTML = loadingHtml("Computing situational records from each team's completed games..." + allConferencesLoadingNote(state, teams));
       return Promise.all(teams.map(function (t) {
         return computeTeamSplits(t.teamId, state.year, rankedIds)
           .then(function (rec) { return Object.assign({ teamId: t.teamId, team: t.team, logo: t.logo }, rec); })
@@ -3281,14 +3307,14 @@ th, td { padding:6px 8px; text-align:center; border-bottom:1px solid var(--borde
     return getStandings(state.year).then(function (standings) {
       var confNames = sortConferences(Object.keys(standings.byConf));
       if (!confNames.length) { slot.innerHTML = emptyHtml("No conference data for this season yet."); return; }
-      if (!state.conference || confNames.indexOf(state.conference) === -1) state.conference = confNames[0];
+      if (!isValidConferenceChoice(state.conference, confNames)) state.conference = confNames[0];
 
-      confSelect.innerHTML = confNames.map(function (c) { return '<option value="' + escapeHtml(c) + '"' + (c === state.conference ? " selected" : "") + ">" + escapeHtml(c) + "</option>"; }).join("");
+      confSelect.innerHTML = conferenceOptionsHtml(confNames, state.conference);
       root.querySelector("#filter-year").addEventListener("change", function (e) { state.year = Number(e.target.value); state.conference = ""; syncUrl(); });
       confSelect.addEventListener("change", function (e) { state.conference = e.target.value; syncUrl(); });
 
-      var teams = standings.byConf[state.conference] || [];
-      slot.innerHTML = loadingHtml("Computing 3rd down, red zone, and explosive play stats from each team's completed games...");
+      var teams = teamsForConferenceChoice(standings, state.conference);
+      slot.innerHTML = loadingHtml("Computing 3rd down, red zone, and explosive play stats from each team's completed games..." + allConferencesLoadingNote(state, teams));
       return Promise.all(teams.map(function (t) {
         return computeTeamEfficiency(t.teamId, state.year)
           .then(function (rec) { return { teamId: t.teamId, team: t.team, logo: t.logo, thirdDown: rec.thirdDown, redZone: rec.redZone, explosivePlays: rec.explosivePlays, games: rec.games }; })
@@ -3403,14 +3429,14 @@ th, td { padding:6px 8px; text-align:center; border-bottom:1px solid var(--borde
     return getStandings(state.year).then(function (standings) {
       var confNames = sortConferences(Object.keys(standings.byConf));
       if (!confNames.length) { slot.innerHTML = emptyHtml("No conference data for this season yet."); return; }
-      if (!state.conference || confNames.indexOf(state.conference) === -1) state.conference = confNames[0];
+      if (!isValidConferenceChoice(state.conference, confNames)) state.conference = confNames[0];
 
-      confSelect.innerHTML = confNames.map(function (c) { return '<option value="' + escapeHtml(c) + '"' + (c === state.conference ? " selected" : "") + ">" + escapeHtml(c) + "</option>"; }).join("");
+      confSelect.innerHTML = conferenceOptionsHtml(confNames, state.conference);
       root.querySelector("#filter-year").addEventListener("change", function (e) { state.year = Number(e.target.value); state.conference = ""; syncUrl(); });
       confSelect.addEventListener("change", function (e) { state.conference = e.target.value; syncUrl(); });
 
-      var teams = standings.byConf[state.conference] || [];
-      slot.innerHTML = loadingHtml("Computing pace from each team's completed games...");
+      var teams = teamsForConferenceChoice(standings, state.conference);
+      slot.innerHTML = loadingHtml("Computing pace from each team's completed games..." + allConferencesLoadingNote(state, teams));
       return Promise.all(teams.map(function (t) {
         return computeTeamPace(t.teamId, state.year)
           .then(function (rec) { return { teamId: t.teamId, team: t.team, logo: t.logo, secondsPerPlay: rec.secondsPerPlay, yardsPerPlay: rec.yardsPerPlay, plays: rec.plays, games: rec.games }; })
