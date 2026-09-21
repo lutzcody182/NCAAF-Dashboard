@@ -162,6 +162,11 @@ th, td { padding:6px 8px; text-align:center; border-bottom:1px solid var(--borde
 .filter-bar select { padding:6px 8px; border-radius:6px; border:1px solid var(--border); background:var(--surface); color:var(--text); font-size:.85rem; }
 .recap-section { margin-bottom:28px; }
 .recap-section h2 { font-size:1.1rem; margin:0 0 6px; }
+.sortable-col { cursor:pointer; user-select:none; white-space:nowrap; }
+.sortable-col:hover { color:var(--text); background:var(--surface-alt); }
+.sortable-col::after { content:"\2195"; margin-left:5px; opacity:.35; font-size:.8em; }
+.sortable-col.sort-asc::after { content:"\2191"; opacity:1; }
+.sortable-col.sort-desc::after { content:"\2193"; opacity:1; }
 .division-heading { margin:18px 0 8px; font-size:.95rem; }
 .division-heading:first-of-type { margin-top:0; }
 .rankings-table .rank-cell { font-weight:700; width:32px; }
@@ -231,6 +236,8 @@ th, td { padding:6px 8px; text-align:center; border-bottom:1px solid var(--borde
         <a href="#/advantages" data-route="advantages">Schedule Advantages</a>
         <a href="#/pace" data-route="pace">Team Pace</a>
         <a href="#/turnover-margin" data-route="turnover-margin">Turnover Margin</a>
+        <a href="#/team-splits" data-route="team-splits">Team Splits</a>
+        <a href="#/efficiency" data-route="efficiency">3rd Down / Red Zone</a>
         <a href="#/line-movement" data-route="line-movement">Line Movement</a>
         <a href="#/weekly-recap" data-route="weekly-recap">Weekly Recap</a>
       </nav>
@@ -796,9 +803,9 @@ th, td { padding:6px 8px; text-align:center; border-bottom:1px solid var(--borde
   // Weekly Recap: small "fun stats" ranked across the same weekly game window
   // used elsewhere (roughly three days back through four days ahead) -
   // Shootout Alert, Upset Alert / Chaos Meter, Biggest Comeback of the Week,
-  // Road Warrior Award, Attendance Leaderboard, and Top Chances of
-  // Precipitation. Each is computed honestly from data ESPN/Open-Meteo
-  // already expose; nothing here is a proprietary rating.
+  // Road Warrior Award, Attendance Leaderboard, Top Chances of Precipitation,
+  // and Weather-Adjusted Scoring. Each is computed honestly from data
+  // ESPN/Open-Meteo already expose; nothing here is a proprietary rating.
   // --------------------------------------------------------------------------
 
   // Shootout Alert: this week's highest-combined-score completed games -
@@ -986,6 +993,40 @@ th, td { padding:6px 8px; text-align:center; border-bottom:1px solid var(--borde
     return '<table class="standings-table weather-table">' + head + "<tbody>" + entries.slice(0, limit).map(function (e, i) { return weatherRowHtml(i + 1, e); }).join("") + "</tbody></table>";
   }
 
+  // Weather-Adjusted Scoring: this week's completed games that had both a
+  // real chance of precipitation and a pregame over/under on file, ranked by
+  // how far the actual combined score landed from that total - a quick,
+  // honest read on whether the wet/snowy games actually played under (or
+  // surprised everyone and went over). Small sample by nature (one week of
+  // games), so this reads as "what happened this week", not a season trend.
+  function computeWeatherAdjustedScoring(completedGames) {
+    return Promise.all(completedGames.map(function (g) {
+      return Promise.all([getGameWeather(g).catch(function () { return null; }), getGameOdds(g.id).catch(function () { return null; })]).then(function (res) {
+        var weather = res[0], odds = res[1];
+        if (!weather || weather.precipProb == null || weather.precipProb <= 0) return null;
+        if (!odds || odds.overUnder == null) return null;
+        var actual = g.home.score + g.away.score;
+        var diff = Number((actual - odds.overUnder).toFixed(1));
+        return { game: g, weather: weather, overUnder: odds.overUnder, actual: actual, diff: diff };
+      });
+    })).then(function (results) {
+      return results.filter(Boolean).sort(function (a, b) { return Math.abs(b.diff) - Math.abs(a.diff); });
+    });
+  }
+  function weatherAdjustedRowHtml(rank, entry) {
+    var g = entry.game;
+    var matchup = teamLinkHtml(g.away.id, g.away.shortName || g.away.name) + ' <span class="muted">@</span> ' + teamLinkHtml(g.home.id, g.home.shortName || g.home.name);
+    var resultTag = entry.diff > 0 ? '<span class="covered-tag total-tag">OVER</span>' : (entry.diff < 0 ? '<span class="covered-tag not-covered">UNDER</span>' : '<span class="covered-tag covered-push">PUSH</span>');
+    var diffText = (entry.diff > 0 ? "+" : "") + entry.diff.toFixed(1) + " pts vs. total";
+    return "<tr><td>" + rank + "</td><td>" + gameCellLinkHtml(g, matchup) + "</td><td>" + escapeHtml(entry.weather.precipProb + "% chance of precip") + "</td>" +
+      "<td>" + entry.actual + " (O/U " + entry.overUnder + ")</td><td>" + resultTag + " <span class=\"small\">" + escapeHtml(diffText) + "</span></td></tr>";
+  }
+  function weatherAdjustedTableHtml(entries, limit) {
+    if (!entries.length) return emptyHtml("No completed games this week had both a real chance of precipitation and a pregame total on file.");
+    var head = "<thead><tr><th>#</th><th>Game</th><th>Precip Chance</th><th>Actual (O/U)</th><th>Result</th></tr></thead>";
+    return '<table class="standings-table weather-adjusted-table">' + head + "<tbody>" + entries.slice(0, limit).map(function (e, i) { return weatherAdjustedRowHtml(i + 1, e); }).join("") + "</tbody></table>";
+  }
+
   function weeklyRecapView(root) {
     setActiveNav("weekly-recap");
     root.innerHTML =
@@ -995,7 +1036,8 @@ th, td { padding:6px 8px; text-align:center; border-bottom:1px solid var(--borde
       '<section class="recap-section"><h2>Biggest Comeback of the Week</h2><p class="muted small">The largest deficit a team overcame to win, measured at the end of any quarter - a bigger deficit that closed before the quarter ended won\'t be caught.</p><div id="comeback-slot">' + loadingHtml("Loading...") + "</div></section>" +
       '<section class="recap-section"><h2>Road Warrior Award</h2><p class="muted small">Which traveling team covered the most ground to get to their game this week, measured from their actual home stadium.</p><div id="road-warrior-slot">' + loadingHtml("Loading...") + "</div></section>" +
       '<section class="recap-section"><h2>Attendance Leaderboard</h2><p class="muted small">This week\'s completed games with the largest reported crowds.</p><div id="attendance-slot">' + loadingHtml("Loading...") + "</div></section>" +
-      '<section class="recap-section"><h2>Top Chances of Precipitation</h2><p class="muted small">Outdoor games with the best chance of rain or snow near kickoff, highest chance first.</p><div id="weather-slot">' + loadingHtml("Loading...") + "</div></section>";
+      '<section class="recap-section"><h2>Top Chances of Precipitation</h2><p class="muted small">Outdoor games with the best chance of rain or snow near kickoff, highest chance first.</p><div id="weather-slot">' + loadingHtml("Loading...") + "</div></section>" +
+      '<section class="recap-section"><h2>Weather-Adjusted Scoring</h2><p class="muted small">This week\'s completed games that had both a real chance of precipitation and a pregame total on file, ranked by how far the actual combined score landed from that total.</p><div id="weather-adjusted-slot">' + loadingHtml("Loading...") + "</div></section>";
 
     var shootoutSlot = root.querySelector("#shootout-slot");
     var upsetSlot = root.querySelector("#upset-slot");
@@ -1003,7 +1045,8 @@ th, td { padding:6px 8px; text-align:center; border-bottom:1px solid var(--borde
     var roadWarriorSlot = root.querySelector("#road-warrior-slot");
     var attendanceSlot = root.querySelector("#attendance-slot");
     var weatherSlot = root.querySelector("#weather-slot");
-    var allSlots = [shootoutSlot, upsetSlot, comebackSlot, roadWarriorSlot, attendanceSlot, weatherSlot];
+    var weatherAdjustedSlot = root.querySelector("#weather-adjusted-slot");
+    var allSlots = [shootoutSlot, upsetSlot, comebackSlot, roadWarriorSlot, attendanceSlot, weatherSlot, weatherAdjustedSlot];
 
     var days = [];
     for (var i = -3; i <= 3; i++) days.push(addDays(new Date(), i));
@@ -1042,7 +1085,12 @@ th, td { padding:6px 8px; text-align:center; border-bottom:1px solid var(--borde
         weatherSlot.innerHTML = weatherTableHtml(entries, 10);
       }).catch(function (err) { weatherSlot.innerHTML = errorHtml(err); });
 
-      return Promise.all([upsetPromise, roadWarriorPromise, attendancePromise, weatherPromise]);
+      weatherAdjustedSlot.innerHTML = loadingHtml("Checking weather and totals for " + completed.length + " completed games...");
+      var weatherAdjustedPromise = computeWeatherAdjustedScoring(completed).then(function (entries) {
+        weatherAdjustedSlot.innerHTML = weatherAdjustedTableHtml(entries, 10);
+      }).catch(function (err) { weatherAdjustedSlot.innerHTML = errorHtml(err); });
+
+      return Promise.all([upsetPromise, roadWarriorPromise, attendancePromise, weatherPromise, weatherAdjustedPromise]);
     }).catch(function (err) { allSlots.forEach(function (slot) { slot.innerHTML = errorHtml(err); }); });
   }
 
@@ -1828,6 +1876,52 @@ th, td { padding:6px 8px; text-align:center; border-bottom:1px solid var(--borde
     return { segments: segments, query: query };
   }
   function navigate(path) { location.hash = path.charAt(0) === "#" ? path : "#" + path; }
+
+  // --------------------------------------------------------------------------
+  // Generic click-to-sort behavior for any <table> whose <thead> th cells
+  // carry a data-sort="num"|"text" attribute and whose <tbody> td cells in
+  // that same column carry a data-sort-value. Clicking a header re-sorts the
+  // rows in place (numeric or alphabetic, toggling asc/desc on repeat
+  // clicks) and marks the active column with a small arrow via CSS. Used by
+  // every leaderboard-style table where "make it sortable" was asked for -
+  // the table's initial server-computed order is just whatever the first
+  // render happens to sort by, same as before.
+  // --------------------------------------------------------------------------
+  function attachSortableTable(table) {
+    if (!table) return;
+    var thead = table.querySelector("thead");
+    var tbody = table.querySelector("tbody");
+    if (!thead || !tbody) return;
+    var ths = Array.prototype.slice.call(thead.querySelectorAll("th[data-sort]"));
+    ths.forEach(function (th) {
+      th.classList.add("sortable-col");
+      th.addEventListener("click", function () {
+        var type = th.getAttribute("data-sort");
+        var newDir = th.getAttribute("data-sort-dir") === "desc" ? "asc" : "desc";
+        ths.forEach(function (t) { t.removeAttribute("data-sort-dir"); t.classList.remove("sort-asc", "sort-desc"); });
+        th.setAttribute("data-sort-dir", newDir);
+        th.classList.add(newDir === "asc" ? "sort-asc" : "sort-desc");
+        var colIndex = Array.prototype.indexOf.call(th.parentNode.children, th);
+        var rows = Array.prototype.slice.call(tbody.querySelectorAll("tr"));
+        rows.sort(function (a, b) {
+          var ca = a.children[colIndex], cb = b.children[colIndex];
+          if (!ca || !cb) return 0;
+          if (type === "num") {
+            var va = ca.getAttribute("data-sort-value"), vb = cb.getAttribute("data-sort-value");
+            va = va == null || va === "" ? -Infinity : Number(va);
+            vb = vb == null || vb === "" ? -Infinity : Number(vb);
+            return newDir === "asc" ? va - vb : vb - va;
+          }
+          var ta = (ca.getAttribute("data-sort-value") || ca.textContent).toLowerCase();
+          var tb = (cb.getAttribute("data-sort-value") || cb.textContent).toLowerCase();
+          if (ta < tb) return newDir === "asc" ? -1 : 1;
+          if (ta > tb) return newDir === "asc" ? 1 : -1;
+          return 0;
+        });
+        rows.forEach(function (r) { tbody.appendChild(r); });
+      });
+    });
+  }
   function setActiveNav(routeName) {
     document.querySelectorAll("#main-nav a[data-route]").forEach(function (a) {
       var active = a.dataset.route === routeName;
@@ -2563,47 +2657,87 @@ th, td { padding:6px 8px; text-align:center; border-bottom:1px solid var(--borde
   // as the Team page's ATS record, just run for every team in a conference at
   // once (scoped to one conference at a time, like Standings, rather than all
   // ~130 FBS teams - that would mean hundreds of schedule/odds fetches on one
-  // page load).
+  // page load). Also carries the Over/Under Hit Rate and Point Differential
+  // leaderboards, since all three are the same "one row per team" shape and
+  // share the exact same schedule+odds fetch - no reason to fetch it twice.
+  // Point Differential uses every completed game (it needs no odds at all),
+  // while ATS and O/U only count games that had a spread/total on file.
   // --------------------------------------------------------------------------
-  function computeTeamAtsRecord(teamId, year) {
+  function computeTeamBettingRecord(teamId, year) {
     return getTeamSchedule(teamId, year).then(function (data) {
-      var completed = (data.games || []).filter(function (g) { return g.status.completed; });
-      if (!completed.length) return { w: 0, l: 0, p: 0, decided: 0 };
+      var completed = (data.games || []).filter(function (g) { return g.status.completed && g.home.score != null && g.away.score != null; });
+      var pointDiff = { sum: 0, games: 0 };
+      completed.forEach(function (g) {
+        var teamIsHome = String(g.home.id) === String(teamId);
+        var self = teamIsHome ? g.home : g.away, opp = teamIsHome ? g.away : g.home;
+        pointDiff.sum += self.score - opp.score;
+        pointDiff.games++;
+      });
+      if (!completed.length) return { ats: { w: 0, l: 0, p: 0, decided: 0 }, ou: { over: 0, under: 0, p: 0, decided: 0 }, pointDiff: pointDiff };
       return Promise.all(completed.map(function (g) { return getGameOdds(g.id).catch(function () { return null; }); })).then(function (oddsList) {
-        var w = 0, l = 0, p = 0, decided = 0;
+        var ats = { w: 0, l: 0, p: 0, decided: 0 };
+        var ou = { over: 0, under: 0, p: 0, decided: 0 };
         completed.forEach(function (g, i) {
           var odds = oddsList[i];
           if (!odds) return;
-          var coverer = spreadCoverage(odds, g);
-          if (!coverer) return;
-          decided++;
-          if (coverer === "push") { p++; return; }
           var teamSide = String(g.home.id) === String(teamId) ? "home" : "away";
-          if (coverer === teamSide) w++; else l++;
+          var coverer = spreadCoverage(odds, g);
+          if (coverer) {
+            ats.decided++;
+            if (coverer === "push") ats.p++;
+            else if (coverer === teamSide) ats.w++;
+            else ats.l++;
+          }
+          var totalRes = totalResult(odds, g);
+          if (totalRes) {
+            ou.decided++;
+            if (totalRes === "push") ou.p++;
+            else if (totalRes === "over") ou.over++;
+            else ou.under++;
+          }
         });
-        return { w: w, l: l, p: p, decided: decided };
+        return { ats: ats, ou: ou, pointDiff: pointDiff };
       });
     });
   }
-  function atsLeaderRowHtml(row) {
-    var pct = row.decided ? row.w / row.decided : null;
-    return "<tr><td class=\"team-cell\"><a class=\"team-link\" href=\"#/team/" + encodeURIComponent(row.teamId) + "\">" + logoHtml(row.logo, row.team) + escapeHtml(row.team) + "</a></td><td>" +
-      row.w + "-" + row.l + (row.p ? "-" + row.p : "") + "</td><td>" + (pct == null ? "-" : winPctText(pct)) + "</td></tr>";
+  function bettingLeaderRowHtml(row) {
+    var atsPct = row.ats.decided ? row.ats.w / row.ats.decided : null;
+    var ouPct = row.ou.decided ? row.ou.over / row.ou.decided : null;
+    var avgDiff = row.pointDiff.games ? row.pointDiff.sum / row.pointDiff.games : null;
+    var diffText = avgDiff == null ? "-" : (avgDiff > 0 ? "+" : "") + avgDiff.toFixed(1);
+    var diffCls = avgDiff > 0 ? "win-text" : (avgDiff < 0 ? "loss-text" : "");
+    return "<tr>" +
+      "<td class=\"team-cell\" data-sort-value=\"" + escapeHtml(row.team) + "\"><a class=\"team-link\" href=\"#/team/" + encodeURIComponent(row.teamId) + "\">" + logoHtml(row.logo, row.team) + escapeHtml(row.team) + "</a></td>" +
+      "<td data-sort-value=\"" + row.ats.w + "\">" + row.ats.w + "-" + row.ats.l + (row.ats.p ? "-" + row.ats.p : "") + "</td>" +
+      "<td data-sort-value=\"" + (atsPct == null ? -1 : atsPct) + "\">" + (atsPct == null ? "-" : winPctText(atsPct)) + "</td>" +
+      "<td data-sort-value=\"" + row.ou.over + "\">" + row.ou.over + "-" + row.ou.under + (row.ou.p ? "-" + row.ou.p : "") + "</td>" +
+      "<td data-sort-value=\"" + (ouPct == null ? -1 : ouPct) + "\">" + (ouPct == null ? "-" : winPctText(ouPct)) + "</td>" +
+      "<td class=\"" + diffCls + "\" data-sort-value=\"" + (avgDiff == null ? -999 : avgDiff) + "\">" + diffText + "</td>" +
+      "<td data-sort-value=\"" + row.pointDiff.games + "\">" + row.pointDiff.games + "</td>" +
+      "</tr>";
   }
   function atsLeaderboardTableHtml(rows) {
-    var head = "<thead><tr><th>Team</th><th>ATS Record</th><th>Cover %</th></tr></thead>";
+    var head = "<thead><tr>" +
+      "<th data-sort=\"text\">Team</th>" +
+      "<th data-sort=\"num\">ATS Record</th>" +
+      "<th data-sort=\"num\" data-sort-dir=\"desc\" class=\"sort-desc\">Cover %</th>" +
+      "<th data-sort=\"num\">O/U Record</th>" +
+      "<th data-sort=\"num\">Over %</th>" +
+      "<th data-sort=\"num\">Avg Point Diff</th>" +
+      "<th data-sort=\"num\">Games</th>" +
+      "</tr></thead>";
     var sorted = rows.slice().sort(function (a, b) {
-      var apct = a.decided ? a.w / a.decided : -1, bpct = b.decided ? b.w / b.decided : -1;
-      return bpct - apct || (b.w - a.w);
+      var apct = a.ats.decided ? a.ats.w / a.ats.decided : -1, bpct = b.ats.decided ? b.ats.w / b.ats.decided : -1;
+      return bpct - apct || (b.ats.w - a.ats.w);
     });
-    return '<table class="standings-table">' + head + "<tbody>" + sorted.map(atsLeaderRowHtml).join("") + "</tbody></table>";
+    return '<table class="standings-table ats-leaderboard-table sortable-table">' + head + "<tbody>" + sorted.map(bettingLeaderRowHtml).join("") + "</tbody></table>";
   }
   function atsView(root, segments, query) {
     setActiveNav("ats");
     var state = { year: Number(query.get("year")) || DEFAULT_YEAR, conference: query.get("conf") || "" };
 
     root.innerHTML =
-      '<section class="view-header"><h1>ATS Leaderboard</h1><p class="muted small">Which teams are covering the spread this season, computed game-by-game from ESPN\'s betting odds.</p></section>' +
+      '<section class="view-header"><h1>ATS Leaderboard</h1><p class="muted small">Which teams are covering the spread, hitting the over/under, and outscoring opponents this season, computed game-by-game from ESPN\'s betting odds and final scores. Click a column heading to sort.</p></section>' +
       '<div class="filter-bar"><label>Season<select id="filter-year">' + yearOptionsHtml(state.year) + "</select></label>" +
       '<label>Conference<select id="filter-conf"><option value="">Loading...</option></select></label></div>' +
       '<div id="ats-table-slot">' + loadingHtml("Loading conferences...") + "</div>";
@@ -2623,13 +2757,14 @@ th, td { padding:6px 8px; text-align:center; border-bottom:1px solid var(--borde
       confSelect.addEventListener("change", function (e) { state.conference = e.target.value; syncUrl(); });
 
       var teams = standings.byConf[state.conference] || [];
-      slot.innerHTML = loadingHtml("Computing ATS records from each team's completed games...");
+      slot.innerHTML = loadingHtml("Computing betting records from each team's completed games...");
       return Promise.all(teams.map(function (t) {
-        return computeTeamAtsRecord(t.teamId, state.year)
-          .then(function (rec) { return { teamId: t.teamId, team: t.team, logo: t.logo, w: rec.w, l: rec.l, p: rec.p, decided: rec.decided }; })
-          .catch(function () { return { teamId: t.teamId, team: t.team, logo: t.logo, w: 0, l: 0, p: 0, decided: 0 }; });
+        return computeTeamBettingRecord(t.teamId, state.year)
+          .then(function (rec) { return { teamId: t.teamId, team: t.team, logo: t.logo, ats: rec.ats, ou: rec.ou, pointDiff: rec.pointDiff }; })
+          .catch(function () { return { teamId: t.teamId, team: t.team, logo: t.logo, ats: { w: 0, l: 0, p: 0, decided: 0 }, ou: { over: 0, under: 0, p: 0, decided: 0 }, pointDiff: { sum: 0, games: 0 } }; });
       })).then(function (rows) {
         slot.innerHTML = rows.length ? atsLeaderboardTableHtml(rows) : emptyHtml("No teams found for this conference.");
+        attachSortableTable(slot.querySelector("table"));
       });
     }).catch(function (err) { slot.innerHTML = errorHtml(err); });
   }
@@ -2907,6 +3042,206 @@ th, td { padding:6px 8px; text-align:center; border-bottom:1px solid var(--borde
   }
 
   // --------------------------------------------------------------------------
+  // View: Team Splits leaderboard - four situational win-loss records side by
+  // side for every team in a conference: home vs. away, one-possession
+  // ("close") games, games against opponents CURRENTLY ranked in the AP Top
+  // 25 (Quality Wins - ESPN's free API doesn't expose historical week-by-week
+  // polls, so this checks today's Top 25 against every opponent played this
+  // season rather than "was ranked at kickoff"), and games as the betting
+  // favorite vs. as the underdog. All four are just different filters over
+  // the same schedule (+ odds for the last one) already fetched elsewhere.
+  // --------------------------------------------------------------------------
+  function computeTeamSplits(teamId, year, rankedIds) {
+    return getTeamSchedule(teamId, year).then(function (data) {
+      var completed = (data.games || []).filter(function (g) { return g.status.completed && g.home.score != null && g.away.score != null; });
+      var home = { w: 0, l: 0 }, away = { w: 0, l: 0 }, close = { w: 0, l: 0 }, ranked = { w: 0, l: 0 };
+      completed.forEach(function (g) {
+        var teamIsHome = String(g.home.id) === String(teamId);
+        var self = teamIsHome ? g.home : g.away, opp = teamIsHome ? g.away : g.home;
+        var bucket = teamIsHome ? home : away;
+        if (self.winner) bucket.w++; else if (opp.winner) bucket.l++;
+        var margin = Math.abs(self.score - opp.score);
+        if (margin <= 8) { if (self.winner) close.w++; else if (opp.winner) close.l++; }
+        if (opp.id != null && rankedIds[String(opp.id)]) { if (self.winner) ranked.w++; else if (opp.winner) ranked.l++; }
+      });
+      if (!completed.length) return { home: home, away: away, close: close, ranked: ranked, favorite: { w: 0, l: 0 }, underdog: { w: 0, l: 0 }, games: 0 };
+      return Promise.all(completed.map(function (g) { return getGameOdds(g.id).catch(function () { return null; }); })).then(function (oddsList) {
+        var favorite = { w: 0, l: 0 }, underdog = { w: 0, l: 0 };
+        completed.forEach(function (g, i) {
+          var odds = oddsList[i];
+          if (!odds || (!odds.homeFavorite && !odds.awayFavorite)) return;
+          var teamIsHome = String(g.home.id) === String(teamId);
+          var self = teamIsHome ? g.home : g.away, opp = teamIsHome ? g.away : g.home;
+          var teamIsFavorite = teamIsHome ? odds.homeFavorite : odds.awayFavorite;
+          var bucket = teamIsFavorite ? favorite : underdog;
+          if (self.winner) bucket.w++; else if (opp.winner) bucket.l++;
+        });
+        return { home: home, away: away, close: close, ranked: ranked, favorite: favorite, underdog: underdog, games: completed.length };
+      });
+    });
+  }
+  function splitRecordCellHtml(rec) {
+    var decided = rec.w + rec.l;
+    var pct = decided ? rec.w / decided : -1;
+    return "<td data-sort-value=\"" + pct + "\">" + (decided ? rec.w + "-" + rec.l : "-") + "</td>";
+  }
+  function teamSplitsRowHtml(row) {
+    return "<tr><td class=\"team-cell\" data-sort-value=\"" + escapeHtml(row.team) + "\"><a class=\"team-link\" href=\"#/team/" + encodeURIComponent(row.teamId) + "\">" + logoHtml(row.logo, row.team) + escapeHtml(row.team) + "</a></td>" +
+      splitRecordCellHtml(row.home) + splitRecordCellHtml(row.away) + splitRecordCellHtml(row.close) + splitRecordCellHtml(row.ranked) + splitRecordCellHtml(row.favorite) + splitRecordCellHtml(row.underdog) +
+      "<td data-sort-value=\"" + row.games + "\">" + row.games + "</td></tr>";
+  }
+  function teamSplitsTableHtml(rows) {
+    var head = "<thead><tr>" +
+      "<th data-sort=\"text\">Team</th>" +
+      "<th data-sort=\"num\">Home</th>" +
+      "<th data-sort=\"num\">Away</th>" +
+      "<th data-sort=\"num\">Close Games (&le;8 pts)</th>" +
+      "<th data-sort=\"num\">vs Ranked (Quality Wins)</th>" +
+      "<th data-sort=\"num\">As Favorite</th>" +
+      "<th data-sort=\"num\">As Underdog</th>" +
+      "<th data-sort=\"num\">Games</th>" +
+      "</tr></thead>";
+    return '<table class="standings-table team-splits-table sortable-table">' + head + "<tbody>" + rows.map(teamSplitsRowHtml).join("") + "</tbody></table>";
+  }
+  function teamSplitsView(root, segments, query) {
+    setActiveNav("team-splits");
+    var state = { year: Number(query.get("year")) || DEFAULT_YEAR, conference: query.get("conf") || "" };
+
+    root.innerHTML =
+      '<section class="view-header"><h1>Team Splits</h1><p class="muted small">Win-loss records broken out by situation - home vs. away, one-possession games, games against teams currently ranked in the AP Top 25, and games as the betting favorite vs. the underdog. "vs Ranked" checks today\'s Top 25 against every opponent played this season, not who was ranked at the time. Click a column heading to sort.</p></section>' +
+      '<div class="filter-bar"><label>Season<select id="filter-year">' + yearOptionsHtml(state.year) + "</select></label>" +
+      '<label>Conference<select id="filter-conf"><option value="">Loading...</option></select></label></div>' +
+      '<div id="splits-table-slot">' + loadingHtml("Loading conferences...") + "</div>";
+
+    function syncUrl() { navigate("/team-splits?" + new URLSearchParams({ year: String(state.year), conf: state.conference }).toString()); }
+
+    var slot = root.querySelector("#splits-table-slot");
+    var confSelect = root.querySelector("#filter-conf");
+
+    return Promise.all([getStandings(state.year), getApPoll().catch(function () { return null; })]).then(function (results) {
+      var standings = results[0], poll = results[1];
+      var rankedIds = {};
+      (poll && poll.ranks || []).forEach(function (r) { if (r.team && r.team.id != null) rankedIds[String(r.team.id)] = true; });
+
+      var confNames = sortConferences(Object.keys(standings.byConf));
+      if (!confNames.length) { slot.innerHTML = emptyHtml("No conference data for this season yet."); return; }
+      if (!state.conference || confNames.indexOf(state.conference) === -1) state.conference = confNames[0];
+
+      confSelect.innerHTML = confNames.map(function (c) { return '<option value="' + escapeHtml(c) + '"' + (c === state.conference ? " selected" : "") + ">" + escapeHtml(c) + "</option>"; }).join("");
+      root.querySelector("#filter-year").addEventListener("change", function (e) { state.year = Number(e.target.value); state.conference = ""; syncUrl(); });
+      confSelect.addEventListener("change", function (e) { state.conference = e.target.value; syncUrl(); });
+
+      var teams = standings.byConf[state.conference] || [];
+      slot.innerHTML = loadingHtml("Computing situational records from each team's completed games...");
+      return Promise.all(teams.map(function (t) {
+        return computeTeamSplits(t.teamId, state.year, rankedIds)
+          .then(function (rec) { return Object.assign({ teamId: t.teamId, team: t.team, logo: t.logo }, rec); })
+          .catch(function () { return { teamId: t.teamId, team: t.team, logo: t.logo, home: { w: 0, l: 0 }, away: { w: 0, l: 0 }, close: { w: 0, l: 0 }, ranked: { w: 0, l: 0 }, favorite: { w: 0, l: 0 }, underdog: { w: 0, l: 0 }, games: 0 }; });
+      })).then(function (rows) {
+        slot.innerHTML = rows.length ? teamSplitsTableHtml(rows) : emptyHtml("No teams found for this conference.");
+        attachSortableTable(slot.querySelector("table"));
+      });
+    }).catch(function (err) { slot.innerHTML = errorHtml(err); });
+  }
+
+  // --------------------------------------------------------------------------
+  // View: Third Down / Red Zone Efficiency leaderboard (season-long) - the
+  // same per-game stats the Game Detail page already shows (thirdDownEff
+  // straight from the box score, red zone trips/scores from drive data via
+  // computeDriveDerivedStats), just summed across every completed game in a
+  // team's season instead of shown one game at a time.
+  // --------------------------------------------------------------------------
+  function parseMadeAttPair(text) {
+    var m = /^(\d+)-(\d+)$/.exec(String(text || "").trim());
+    return m ? { made: Number(m[1]), att: Number(m[2]) } : null;
+  }
+  function computeTeamEfficiency(teamId, year) {
+    return getTeamSchedule(teamId, year).then(function (data) {
+      var completed = (data.games || []).filter(function (g) { return g.status.completed; });
+      if (!completed.length) return { thirdDown: { made: 0, att: 0 }, redZone: { scores: 0, trips: 0 }, games: 0 };
+      return Promise.all(completed.map(function (g) { return getGameSummary(g.id, true).catch(function () { return null; }); })).then(function (summaries) {
+        var thirdDown = { made: 0, att: 0 }, redZone = { scores: 0, trips: 0 }, games = 0;
+        summaries.forEach(function (summary, i) {
+          if (!summary) return;
+          var g = completed[i];
+          var side = String(g.home.id) === String(teamId) ? "home" : "away";
+          var teamStats = summary.teamStats && summary.teamStats[side];
+          var counted = false;
+          if (teamStats && teamStats.thirdDownEff) {
+            var rec = parseMadeAttPair(teamStats.thirdDownEff.displayValue);
+            if (rec) { thirdDown.made += rec.made; thirdDown.att += rec.att; counted = true; }
+          }
+          var driveStats = computeDriveDerivedStats(summary.drives, g.home.id, g.away.id);
+          if (driveStats) {
+            var own = driveStats[side];
+            redZone.scores += own.redZoneScores; redZone.trips += own.redZoneTrips;
+            counted = true;
+          }
+          if (counted) games++;
+        });
+        return { thirdDown: thirdDown, redZone: redZone, games: games };
+      });
+    });
+  }
+  function efficiencyRowHtml(row) {
+    var tdPct = row.thirdDown.att ? row.thirdDown.made / row.thirdDown.att : null;
+    var rzPct = row.redZone.trips ? row.redZone.scores / row.redZone.trips : null;
+    return "<tr><td class=\"team-cell\" data-sort-value=\"" + escapeHtml(row.team) + "\"><a class=\"team-link\" href=\"#/team/" + encodeURIComponent(row.teamId) + "\">" + logoHtml(row.logo, row.team) + escapeHtml(row.team) + "</a></td>" +
+      "<td data-sort-value=\"" + (tdPct == null ? -1 : tdPct) + "\">" + (row.thirdDown.att ? row.thirdDown.made + "/" + row.thirdDown.att + " (" + Math.round(tdPct * 100) + "%)" : "-") + "</td>" +
+      "<td data-sort-value=\"" + (rzPct == null ? -1 : rzPct) + "\">" + (row.redZone.trips ? row.redZone.scores + "/" + row.redZone.trips + " (" + Math.round(rzPct * 100) + "%)" : "-") + "</td>" +
+      "<td data-sort-value=\"" + row.games + "\">" + row.games + "</td></tr>";
+  }
+  function efficiencyTableHtml(rows) {
+    var head = "<thead><tr>" +
+      "<th data-sort=\"text\">Team</th>" +
+      "<th data-sort=\"num\" data-sort-dir=\"desc\" class=\"sort-desc\">3rd Down Conv.</th>" +
+      "<th data-sort=\"num\">Red Zone Eff.</th>" +
+      "<th data-sort=\"num\">Games</th>" +
+      "</tr></thead>";
+    var sorted = rows.slice().sort(function (a, b) {
+      var ap = a.thirdDown.att ? a.thirdDown.made / a.thirdDown.att : -1, bp = b.thirdDown.att ? b.thirdDown.made / b.thirdDown.att : -1;
+      return bp - ap;
+    });
+    return '<table class="standings-table efficiency-table sortable-table">' + head + "<tbody>" + sorted.map(efficiencyRowHtml).join("") + "</tbody></table>";
+  }
+  function efficiencyView(root, segments, query) {
+    setActiveNav("efficiency");
+    var state = { year: Number(query.get("year")) || DEFAULT_YEAR, conference: query.get("conf") || "" };
+
+    root.innerHTML =
+      '<section class="view-header"><h1>3rd Down / Red Zone Efficiency</h1><p class="muted small">Season-long third-down conversion rate and red zone scoring rate, summed game-by-game from ESPN\'s box scores and drive data. Click a column heading to sort.</p></section>' +
+      '<div class="filter-bar"><label>Season<select id="filter-year">' + yearOptionsHtml(state.year) + "</select></label>" +
+      '<label>Conference<select id="filter-conf"><option value="">Loading...</option></select></label></div>' +
+      '<div id="efficiency-table-slot">' + loadingHtml("Loading conferences...") + "</div>";
+
+    function syncUrl() { navigate("/efficiency?" + new URLSearchParams({ year: String(state.year), conf: state.conference }).toString()); }
+
+    var slot = root.querySelector("#efficiency-table-slot");
+    var confSelect = root.querySelector("#filter-conf");
+
+    return getStandings(state.year).then(function (standings) {
+      var confNames = sortConferences(Object.keys(standings.byConf));
+      if (!confNames.length) { slot.innerHTML = emptyHtml("No conference data for this season yet."); return; }
+      if (!state.conference || confNames.indexOf(state.conference) === -1) state.conference = confNames[0];
+
+      confSelect.innerHTML = confNames.map(function (c) { return '<option value="' + escapeHtml(c) + '"' + (c === state.conference ? " selected" : "") + ">" + escapeHtml(c) + "</option>"; }).join("");
+      root.querySelector("#filter-year").addEventListener("change", function (e) { state.year = Number(e.target.value); state.conference = ""; syncUrl(); });
+      confSelect.addEventListener("change", function (e) { state.conference = e.target.value; syncUrl(); });
+
+      var teams = standings.byConf[state.conference] || [];
+      slot.innerHTML = loadingHtml("Computing 3rd down and red zone efficiency from each team's completed games...");
+      return Promise.all(teams.map(function (t) {
+        return computeTeamEfficiency(t.teamId, state.year)
+          .then(function (rec) { return { teamId: t.teamId, team: t.team, logo: t.logo, thirdDown: rec.thirdDown, redZone: rec.redZone, games: rec.games }; })
+          .catch(function () { return { teamId: t.teamId, team: t.team, logo: t.logo, thirdDown: { made: 0, att: 0 }, redZone: { scores: 0, trips: 0 }, games: 0 }; });
+      })).then(function (rows) {
+        slot.innerHTML = rows.length ? efficiencyTableHtml(rows) : emptyHtml("No teams found for this conference.");
+        attachSortableTable(slot.querySelector("table"));
+      });
+    }).catch(function (err) { slot.innerHTML = errorHtml(err); });
+  }
+
+  // --------------------------------------------------------------------------
   // Team page: Havoc Stats panel. Approximates the "havoc rate" metric popular
   // on advanced-stats sites (share of an offense's plays that a defense blows
   // up with a tackle-for-loss, a pass breakup, or a pick), split the same way
@@ -3065,7 +3400,7 @@ th, td { padding:6px 8px; text-align:center; border-bottom:1px solid var(--borde
     document.addEventListener("click", function (e) { if (!wrap.contains(e.target)) closeResults(); });
   }
 
-  var VIEWS = { scores: scoresView, game: gameView, standings: standingsView, rankings: rankingsView, team: teamView, player: playerView, ats: atsView, advantages: scheduleAdvantagesView, pace: paceView, "turnover-margin": turnoverMarginView, "line-movement": lineMovementView, "weekly-recap": weeklyRecapView };
+  var VIEWS = { scores: scoresView, game: gameView, standings: standingsView, rankings: rankingsView, team: teamView, player: playerView, ats: atsView, advantages: scheduleAdvantagesView, pace: paceView, "turnover-margin": turnoverMarginView, "team-splits": teamSplitsView, efficiency: efficiencyView, "line-movement": lineMovementView, "weekly-recap": weeklyRecapView };
 
   window.addEventListener("hashchange", handleRoute);
   initTeamSearch();
