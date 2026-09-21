@@ -2950,9 +2950,9 @@ th, td { padding:6px 8px; text-align:center; border-bottom:1px solid var(--borde
   function computeTeamPace(teamId, year) {
     return getTeamSchedule(teamId, year).then(function (data) {
       var completed = (data.games || []).filter(function (g) { return g.status.completed; });
-      if (!completed.length) return { secondsPerPlay: null, plays: 0, games: 0 };
+      if (!completed.length) return { secondsPerPlay: null, yardsPerPlay: null, plays: 0, games: 0 };
       return Promise.all(completed.map(function (g) { return getGameSummary(g.id, true).catch(function () { return null; }); })).then(function (summaries) {
-        var totalPlays = 0, totalSeconds = 0, games = 0;
+        var totalPlays = 0, totalSeconds = 0, totalYards = 0, games = 0;
         summaries.forEach(function (summary, i) {
           if (!summary || !summary.teamStats) return;
           var g = completed[i];
@@ -2960,9 +2960,13 @@ th, td { padding:6px 8px; text-align:center; border-bottom:1px solid var(--borde
           var stats = teamIsHome ? summary.teamStats.home : summary.teamStats.away;
           var plays = parsePlaysFromTeamStats(stats);
           var seconds = stats && stats.possessionTime ? parsePossessionSeconds(stats.possessionTime.displayValue) : null;
-          if (plays != null && plays > 0 && seconds != null) { totalPlays += plays; totalSeconds += seconds; games++; }
+          var yards = stats && stats.totalYards ? safeNum(stats.totalYards.displayValue, null) : null;
+          if (plays != null && plays > 0 && seconds != null) {
+            totalPlays += plays; totalSeconds += seconds; games++;
+            if (yards != null) totalYards += yards;
+          }
         });
-        return { secondsPerPlay: totalPlays ? totalSeconds / totalPlays : null, plays: totalPlays, games: games };
+        return { secondsPerPlay: totalPlays ? totalSeconds / totalPlays : null, yardsPerPlay: totalPlays ? totalYards / totalPlays : null, plays: totalPlays, games: games };
       });
     });
   }
@@ -2970,47 +2974,95 @@ th, td { padding:6px 8px; text-align:center; border-bottom:1px solid var(--borde
   // --------------------------------------------------------------------------
   // Turnover Margin Leaderboard: takeaways minus giveaways, season-to-date,
   // read straight off each side's "turnovers" box-score stat (own turnovers =
-  // giveaways, opponent's turnovers = this team's takeaways) - same
-  // per-completed-game box-score walk as Team Pace above.
+  // giveaways, opponent's turnovers = this team's takeaways). Also carries
+  // Havoc Rate (reusing the same created-havoc math as the Team page's Havoc
+  // Stats panel - tackles for loss, passes defended, and interceptions per
+  // opponent play) and Penalty Discipline (penalties/penalty yards, from the
+  // box score's totalPenaltiesYards field) - all three are "how much chaos
+  // does this team create or avoid" stats, and all three walk the exact same
+  // per-completed-game box-score fetch, so they're computed together in one
+  // pass instead of three separate fetch loops.
   // --------------------------------------------------------------------------
-  function computeTeamTurnoverMargin(teamId, year) {
+  function parseDashPair(text) {
+    var m = /^(\d+)-(\d+)$/.exec(String(text || "").trim());
+    return m ? { first: Number(m[1]), second: Number(m[2]) } : null;
+  }
+  function computeTeamDiscipline(teamId, year) {
     return getTeamSchedule(teamId, year).then(function (data) {
       var completed = (data.games || []).filter(function (g) { return g.status.completed; });
-      if (!completed.length) return { margin: null, takeaways: 0, giveaways: 0, games: 0 };
+      var empty = { margin: null, takeaways: 0, giveaways: 0, havocRate: null, penalties: 0, penaltyYards: 0, games: 0 };
+      if (!completed.length) return empty;
       return Promise.all(completed.map(function (g) { return getGameSummary(g.id, true).catch(function () { return null; }); })).then(function (summaries) {
-        var takeaways = 0, giveaways = 0, games = 0;
+        var takeaways = 0, giveaways = 0, penalties = 0, penaltyYards = 0;
+        var havoc = { tfl: 0, pd: 0, int: 0, plays: 0 }; // "plays" = opponent offensive plays faced, the denominator for havoc created
+        var games = 0;
         summaries.forEach(function (summary, i) {
           if (!summary || !summary.teamStats) return;
           var g = completed[i];
           var side = String(g.home.id) === String(teamId) ? "home" : "away";
           var oppSide = side === "home" ? "away" : "home";
           var ownStats = summary.teamStats[side], oppStats = summary.teamStats[oppSide];
-          if (!ownStats || !oppStats || !ownStats.turnovers || !oppStats.turnovers) return;
-          giveaways += safeNum(ownStats.turnovers.displayValue, 0);
-          takeaways += safeNum(oppStats.turnovers.displayValue, 0);
-          games++;
+          if (!ownStats || !oppStats) return;
+          var counted = false;
+          if (ownStats.turnovers && oppStats.turnovers) {
+            giveaways += safeNum(ownStats.turnovers.displayValue, 0);
+            takeaways += safeNum(oppStats.turnovers.displayValue, 0);
+            counted = true;
+          }
+          if (ownStats.totalPenaltiesYards) {
+            var pen = parseDashPair(ownStats.totalPenaltiesYards.displayValue);
+            if (pen) { penalties += pen.first; penaltyYards += pen.second; counted = true; }
+          }
+          if (summary.playerStats) {
+            var oppPlays = parsePlaysFromTeamStats(oppStats);
+            if (oppPlays != null) {
+              var ownHavoc = sumDefensiveHavoc(summary.playerStats[side]);
+              havoc.tfl += ownHavoc.tfl; havoc.pd += ownHavoc.pd; havoc.int += ownHavoc.int; havoc.plays += oppPlays;
+              counted = true;
+            }
+          }
+          if (counted) games++;
         });
-        return { margin: games ? takeaways - giveaways : null, takeaways: takeaways, giveaways: giveaways, games: games };
+        return {
+          margin: games ? takeaways - giveaways : null, takeaways: takeaways, giveaways: giveaways,
+          havocRate: havoc.plays ? (havoc.tfl + havoc.pd + havoc.int) / havoc.plays : null,
+          penalties: penalties, penaltyYards: penaltyYards, games: games,
+        };
       });
     });
   }
   function turnoverMarginRowHtml(row) {
     var marginText = row.margin == null ? "-" : (row.margin > 0 ? "+" : "") + row.margin;
     var marginCls = row.margin > 0 ? "win-text" : (row.margin < 0 ? "loss-text" : "");
-    return "<tr><td class=\"team-cell\"><a class=\"team-link\" href=\"#/team/" + encodeURIComponent(row.teamId) + "\">" + logoHtml(row.logo, row.team) + escapeHtml(row.team) + "</a></td><td>" +
-      row.takeaways + "</td><td>" + row.giveaways + "</td><td class=\"" + marginCls + "\">" + marginText + "</td><td>" + row.games + "</td></tr>";
+    return "<tr><td class=\"team-cell\" data-sort-value=\"" + escapeHtml(row.team) + "\"><a class=\"team-link\" href=\"#/team/" + encodeURIComponent(row.teamId) + "\">" + logoHtml(row.logo, row.team) + escapeHtml(row.team) + "</a></td>" +
+      "<td data-sort-value=\"" + row.takeaways + "\">" + row.takeaways + "</td>" +
+      "<td data-sort-value=\"" + row.giveaways + "\">" + row.giveaways + "</td>" +
+      "<td class=\"" + marginCls + "\" data-sort-value=\"" + (row.margin == null ? -999 : row.margin) + "\">" + marginText + "</td>" +
+      "<td data-sort-value=\"" + (row.havocRate == null ? -1 : row.havocRate) + "\">" + (row.havocRate == null ? "-" : (row.havocRate * 100).toFixed(1) + "%") + "</td>" +
+      "<td data-sort-value=\"" + row.penalties + "\">" + row.penalties + "</td>" +
+      "<td data-sort-value=\"" + row.penaltyYards + "\">" + row.penaltyYards + "</td>" +
+      "<td data-sort-value=\"" + row.games + "\">" + row.games + "</td></tr>";
   }
   function turnoverMarginTableHtml(rows) {
-    var head = "<thead><tr><th>Team</th><th>Takeaways</th><th>Giveaways</th><th>Margin</th><th>Games</th></tr></thead>";
+    var head = "<thead><tr>" +
+      "<th data-sort=\"text\">Team</th>" +
+      "<th data-sort=\"num\">Takeaways</th>" +
+      "<th data-sort=\"num\">Giveaways</th>" +
+      "<th data-sort=\"num\" data-sort-dir=\"desc\" class=\"sort-desc\">Margin</th>" +
+      "<th data-sort=\"num\">Havoc Rate</th>" +
+      "<th data-sort=\"num\">Penalties</th>" +
+      "<th data-sort=\"num\">Penalty Yds</th>" +
+      "<th data-sort=\"num\">Games</th>" +
+      "</tr></thead>";
     var sorted = rows.slice().sort(function (a, b) { return (b.margin == null ? -999 : b.margin) - (a.margin == null ? -999 : a.margin); });
-    return '<table class="standings-table">' + head + "<tbody>" + sorted.map(turnoverMarginRowHtml).join("") + "</tbody></table>";
+    return '<table class="standings-table turnover-margin-table sortable-table">' + head + "<tbody>" + sorted.map(turnoverMarginRowHtml).join("") + "</tbody></table>";
   }
   function turnoverMarginView(root, segments, query) {
     setActiveNav("turnover-margin");
     var state = { year: Number(query.get("year")) || DEFAULT_YEAR, conference: query.get("conf") || "" };
 
     root.innerHTML =
-      '<section class="view-header"><h1>Turnover Margin Leaderboard</h1><p class="muted small">Takeaways minus giveaways, season-to-date, computed game-by-game from ESPN\'s box scores.</p></section>' +
+      '<section class="view-header"><h1>Turnover Margin Leaderboard</h1><p class="muted small">Takeaways minus giveaways, defensive Havoc Rate (tackles for loss, passes defended, and interceptions per opponent play), and penalty discipline - season-to-date, computed game-by-game from ESPN\'s box scores. Click a column heading to sort.</p></section>' +
       '<div class="filter-bar"><label>Season<select id="filter-year">' + yearOptionsHtml(state.year) + "</select></label>" +
       '<label>Conference<select id="filter-conf"><option value="">Loading...</option></select></label></div>' +
       '<div id="turnover-table-slot">' + loadingHtml("Loading conferences...") + "</div>";
@@ -3030,13 +3082,14 @@ th, td { padding:6px 8px; text-align:center; border-bottom:1px solid var(--borde
       confSelect.addEventListener("change", function (e) { state.conference = e.target.value; syncUrl(); });
 
       var teams = standings.byConf[state.conference] || [];
-      slot.innerHTML = loadingHtml("Computing turnover margins from each team's completed games...");
+      slot.innerHTML = loadingHtml("Computing turnover margin, havoc rate, and penalties from each team's completed games...");
       return Promise.all(teams.map(function (t) {
-        return computeTeamTurnoverMargin(t.teamId, state.year)
-          .then(function (rec) { return { teamId: t.teamId, team: t.team, logo: t.logo, margin: rec.margin, takeaways: rec.takeaways, giveaways: rec.giveaways, games: rec.games }; })
-          .catch(function () { return { teamId: t.teamId, team: t.team, logo: t.logo, margin: null, takeaways: 0, giveaways: 0, games: 0 }; });
+        return computeTeamDiscipline(t.teamId, state.year)
+          .then(function (rec) { return { teamId: t.teamId, team: t.team, logo: t.logo, margin: rec.margin, takeaways: rec.takeaways, giveaways: rec.giveaways, havocRate: rec.havocRate, penalties: rec.penalties, penaltyYards: rec.penaltyYards, games: rec.games }; })
+          .catch(function () { return { teamId: t.teamId, team: t.team, logo: t.logo, margin: null, takeaways: 0, giveaways: 0, havocRate: null, penalties: 0, penaltyYards: 0, games: 0 }; });
       })).then(function (rows) {
         slot.innerHTML = rows.length ? turnoverMarginTableHtml(rows) : emptyHtml("No teams found for this conference.");
+        attachSortableTable(slot.querySelector("table"));
       });
     }).catch(function (err) { slot.innerHTML = errorHtml(err); });
   }
@@ -3147,20 +3200,23 @@ th, td { padding:6px 8px; text-align:center; border-bottom:1px solid var(--borde
   // --------------------------------------------------------------------------
   // View: Third Down / Red Zone Efficiency leaderboard (season-long) - the
   // same per-game stats the Game Detail page already shows (thirdDownEff
-  // straight from the box score, red zone trips/scores from drive data via
-  // computeDriveDerivedStats), just summed across every completed game in a
-  // team's season instead of shown one game at a time.
+  // straight from the box score, red zone trips/scores AND explosive plays
+  // from drive data via computeDriveDerivedStats), just summed across every
+  // completed game in a team's season instead of shown one game at a time.
+  // Explosive Plays rides along here rather than getting its own fetch loop,
+  // since computeDriveDerivedStats already returns it alongside red zone
+  // stats for free.
   // --------------------------------------------------------------------------
-  function parseMadeAttPair(text) {
+  function parseDashPair(text) {
     var m = /^(\d+)-(\d+)$/.exec(String(text || "").trim());
-    return m ? { made: Number(m[1]), att: Number(m[2]) } : null;
+    return m ? { first: Number(m[1]), second: Number(m[2]) } : null;
   }
   function computeTeamEfficiency(teamId, year) {
     return getTeamSchedule(teamId, year).then(function (data) {
       var completed = (data.games || []).filter(function (g) { return g.status.completed; });
-      if (!completed.length) return { thirdDown: { made: 0, att: 0 }, redZone: { scores: 0, trips: 0 }, games: 0 };
+      if (!completed.length) return { thirdDown: { made: 0, att: 0 }, redZone: { scores: 0, trips: 0 }, explosivePlays: 0, games: 0 };
       return Promise.all(completed.map(function (g) { return getGameSummary(g.id, true).catch(function () { return null; }); })).then(function (summaries) {
-        var thirdDown = { made: 0, att: 0 }, redZone = { scores: 0, trips: 0 }, games = 0;
+        var thirdDown = { made: 0, att: 0 }, redZone = { scores: 0, trips: 0 }, explosivePlays = 0, games = 0;
         summaries.forEach(function (summary, i) {
           if (!summary) return;
           var g = completed[i];
@@ -3168,18 +3224,19 @@ th, td { padding:6px 8px; text-align:center; border-bottom:1px solid var(--borde
           var teamStats = summary.teamStats && summary.teamStats[side];
           var counted = false;
           if (teamStats && teamStats.thirdDownEff) {
-            var rec = parseMadeAttPair(teamStats.thirdDownEff.displayValue);
-            if (rec) { thirdDown.made += rec.made; thirdDown.att += rec.att; counted = true; }
+            var rec = parseDashPair(teamStats.thirdDownEff.displayValue);
+            if (rec) { thirdDown.made += rec.first; thirdDown.att += rec.second; counted = true; }
           }
           var driveStats = computeDriveDerivedStats(summary.drives, g.home.id, g.away.id);
           if (driveStats) {
             var own = driveStats[side];
             redZone.scores += own.redZoneScores; redZone.trips += own.redZoneTrips;
+            explosivePlays += own.explosivePlays;
             counted = true;
           }
           if (counted) games++;
         });
-        return { thirdDown: thirdDown, redZone: redZone, games: games };
+        return { thirdDown: thirdDown, redZone: redZone, explosivePlays: explosivePlays, games: games };
       });
     });
   }
@@ -3189,6 +3246,7 @@ th, td { padding:6px 8px; text-align:center; border-bottom:1px solid var(--borde
     return "<tr><td class=\"team-cell\" data-sort-value=\"" + escapeHtml(row.team) + "\"><a class=\"team-link\" href=\"#/team/" + encodeURIComponent(row.teamId) + "\">" + logoHtml(row.logo, row.team) + escapeHtml(row.team) + "</a></td>" +
       "<td data-sort-value=\"" + (tdPct == null ? -1 : tdPct) + "\">" + (row.thirdDown.att ? row.thirdDown.made + "/" + row.thirdDown.att + " (" + Math.round(tdPct * 100) + "%)" : "-") + "</td>" +
       "<td data-sort-value=\"" + (rzPct == null ? -1 : rzPct) + "\">" + (row.redZone.trips ? row.redZone.scores + "/" + row.redZone.trips + " (" + Math.round(rzPct * 100) + "%)" : "-") + "</td>" +
+      "<td data-sort-value=\"" + row.explosivePlays + "\">" + row.explosivePlays + "</td>" +
       "<td data-sort-value=\"" + row.games + "\">" + row.games + "</td></tr>";
   }
   function efficiencyTableHtml(rows) {
@@ -3196,6 +3254,7 @@ th, td { padding:6px 8px; text-align:center; border-bottom:1px solid var(--borde
       "<th data-sort=\"text\">Team</th>" +
       "<th data-sort=\"num\" data-sort-dir=\"desc\" class=\"sort-desc\">3rd Down Conv.</th>" +
       "<th data-sort=\"num\">Red Zone Eff.</th>" +
+      "<th data-sort=\"num\">Explosive Plays</th>" +
       "<th data-sort=\"num\">Games</th>" +
       "</tr></thead>";
     var sorted = rows.slice().sort(function (a, b) {
@@ -3209,7 +3268,7 @@ th, td { padding:6px 8px; text-align:center; border-bottom:1px solid var(--borde
     var state = { year: Number(query.get("year")) || DEFAULT_YEAR, conference: query.get("conf") || "" };
 
     root.innerHTML =
-      '<section class="view-header"><h1>3rd Down / Red Zone Efficiency</h1><p class="muted small">Season-long third-down conversion rate and red zone scoring rate, summed game-by-game from ESPN\'s box scores and drive data. Click a column heading to sort.</p></section>' +
+      '<section class="view-header"><h1>3rd Down / Red Zone Efficiency</h1><p class="muted small">Season-long third-down conversion rate, red zone scoring rate, and explosive plays (20+ yard rushes or completions), summed game-by-game from ESPN\'s box scores and drive data. Click a column heading to sort.</p></section>' +
       '<div class="filter-bar"><label>Season<select id="filter-year">' + yearOptionsHtml(state.year) + "</select></label>" +
       '<label>Conference<select id="filter-conf"><option value="">Loading...</option></select></label></div>' +
       '<div id="efficiency-table-slot">' + loadingHtml("Loading conferences...") + "</div>";
@@ -3229,11 +3288,11 @@ th, td { padding:6px 8px; text-align:center; border-bottom:1px solid var(--borde
       confSelect.addEventListener("change", function (e) { state.conference = e.target.value; syncUrl(); });
 
       var teams = standings.byConf[state.conference] || [];
-      slot.innerHTML = loadingHtml("Computing 3rd down and red zone efficiency from each team's completed games...");
+      slot.innerHTML = loadingHtml("Computing 3rd down, red zone, and explosive play stats from each team's completed games...");
       return Promise.all(teams.map(function (t) {
         return computeTeamEfficiency(t.teamId, state.year)
-          .then(function (rec) { return { teamId: t.teamId, team: t.team, logo: t.logo, thirdDown: rec.thirdDown, redZone: rec.redZone, games: rec.games }; })
-          .catch(function () { return { teamId: t.teamId, team: t.team, logo: t.logo, thirdDown: { made: 0, att: 0 }, redZone: { scores: 0, trips: 0 }, games: 0 }; });
+          .then(function (rec) { return { teamId: t.teamId, team: t.team, logo: t.logo, thirdDown: rec.thirdDown, redZone: rec.redZone, explosivePlays: rec.explosivePlays, games: rec.games }; })
+          .catch(function () { return { teamId: t.teamId, team: t.team, logo: t.logo, thirdDown: { made: 0, att: 0 }, redZone: { scores: 0, trips: 0 }, explosivePlays: 0, games: 0 }; });
       })).then(function (rows) {
         slot.innerHTML = rows.length ? efficiencyTableHtml(rows) : emptyHtml("No teams found for this conference.");
         attachSortableTable(slot.querySelector("table"));
@@ -3306,24 +3365,32 @@ th, td { padding:6px 8px; text-align:center; border-bottom:1px solid var(--borde
       '<p class="muted small">Share of plays disrupted with a tackle for loss, a pass breakup, or an interception - "Defense" is havoc this team\'s defense created, "Offense" is havoc its offense had created against it. Front Seven/Defensive Backs mirror the split on fourthandshort.com; forced fumbles aren\'t included since ESPN\'s box scores don\'t track them separately, and this is a raw rate rather than an opponent-adjusted one. Based on ' + record.games + " completed game" + (record.games === 1 ? "" : "s") + " this season.</p>";
   }
   function paceRowHtml(row) {
-    return "<tr><td class=\"team-cell\"><a class=\"team-link\" href=\"#/team/" + encodeURIComponent(row.teamId) + "\">" + logoHtml(row.logo, row.team) + escapeHtml(row.team) + "</a></td><td>" +
-      (row.secondsPerPlay == null ? "-" : row.secondsPerPlay.toFixed(2)) + "</td><td>" + row.plays + "</td><td>" + row.games + "</td></tr>";
+    return "<tr><td class=\"team-cell\" data-sort-value=\"" + escapeHtml(row.team) + "\"><a class=\"team-link\" href=\"#/team/" + encodeURIComponent(row.teamId) + "\">" + logoHtml(row.logo, row.team) + escapeHtml(row.team) + "</a></td>" +
+      "<td data-sort-value=\"" + (row.secondsPerPlay == null ? 999 : row.secondsPerPlay) + "\">" + (row.secondsPerPlay == null ? "-" : row.secondsPerPlay.toFixed(2)) + "</td>" +
+      "<td data-sort-value=\"" + (row.yardsPerPlay == null ? -1 : row.yardsPerPlay) + "\">" + (row.yardsPerPlay == null ? "-" : row.yardsPerPlay.toFixed(1)) + "</td>" +
+      "<td data-sort-value=\"" + row.plays + "\">" + row.plays + "</td><td data-sort-value=\"" + row.games + "\">" + row.games + "</td></tr>";
   }
   function paceTableHtml(rows) {
-    var head = "<thead><tr><th>Team</th><th>Sec / Play</th><th>Plays</th><th>Games</th></tr></thead>";
+    var head = "<thead><tr>" +
+      "<th data-sort=\"text\">Team</th>" +
+      "<th data-sort=\"num\" data-sort-dir=\"asc\" class=\"sort-asc\">Sec / Play</th>" +
+      "<th data-sort=\"num\">Yards / Play</th>" +
+      "<th data-sort=\"num\">Plays</th>" +
+      "<th data-sort=\"num\">Games</th>" +
+      "</tr></thead>";
     var sorted = rows.slice().sort(function (a, b) {
       if (a.secondsPerPlay == null) return 1;
       if (b.secondsPerPlay == null) return -1;
       return a.secondsPerPlay - b.secondsPerPlay;
     });
-    return '<table class="standings-table">' + head + "<tbody>" + sorted.map(paceRowHtml).join("") + "</tbody></table>";
+    return '<table class="standings-table pace-table sortable-table">' + head + "<tbody>" + sorted.map(paceRowHtml).join("") + "</tbody></table>";
   }
   function paceView(root, segments, query) {
     setActiveNav("pace");
     var state = { year: Number(query.get("year")) || DEFAULT_YEAR, conference: query.get("conf") || "" };
 
     root.innerHTML =
-      '<section class="view-header"><h1>Team Pace</h1><p class="muted small">Seconds of possession per offensive play, season-to-date, computed straight from ESPN\'s box scores - fastest tempo first. This is a raw pace number only; it doesn\'t adjust for game situation the way some other sites\' proprietary ratings do.</p></section>' +
+      '<section class="view-header"><h1>Team Pace</h1><p class="muted small">Seconds of possession per offensive play and yards gained per play, season-to-date, computed straight from ESPN\'s box scores - fastest tempo first by default. Raw numbers only; they don\'t adjust for game situation the way some other sites\' proprietary ratings do. Click a column heading to sort.</p></section>' +
       '<div class="filter-bar"><label>Season<select id="filter-year">' + yearOptionsHtml(state.year) + "</select></label>" +
       '<label>Conference<select id="filter-conf"><option value="">Loading...</option></select></label></div>' +
       '<div id="pace-table-slot">' + loadingHtml("Loading conferences...") + "</div>";
@@ -3346,10 +3413,11 @@ th, td { padding:6px 8px; text-align:center; border-bottom:1px solid var(--borde
       slot.innerHTML = loadingHtml("Computing pace from each team's completed games...");
       return Promise.all(teams.map(function (t) {
         return computeTeamPace(t.teamId, state.year)
-          .then(function (rec) { return { teamId: t.teamId, team: t.team, logo: t.logo, secondsPerPlay: rec.secondsPerPlay, plays: rec.plays, games: rec.games }; })
-          .catch(function () { return { teamId: t.teamId, team: t.team, logo: t.logo, secondsPerPlay: null, plays: 0, games: 0 }; });
+          .then(function (rec) { return { teamId: t.teamId, team: t.team, logo: t.logo, secondsPerPlay: rec.secondsPerPlay, yardsPerPlay: rec.yardsPerPlay, plays: rec.plays, games: rec.games }; })
+          .catch(function () { return { teamId: t.teamId, team: t.team, logo: t.logo, secondsPerPlay: null, yardsPerPlay: null, plays: 0, games: 0 }; });
       })).then(function (rows) {
         slot.innerHTML = rows.length ? paceTableHtml(rows) : emptyHtml("No teams found for this conference.");
+        attachSortableTable(slot.querySelector("table"));
       });
     }).catch(function (err) { slot.innerHTML = errorHtml(err); });
   }
