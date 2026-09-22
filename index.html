@@ -755,11 +755,23 @@ th, td { padding:6px 8px; text-align:center; border-bottom:1px solid var(--borde
     var m = logoUrl && String(logoUrl).match(FNS_LOGO_TEAM_ID_RE);
     return m ? m[1] : null;
   }
+  // A week-pinned scoreboard fetch, as opposed to getScoreboard's rolling
+  // +/-3-calendar-day window above. That window is fine for "what happened
+  // recently" pages (Line Movement, Weekly Recap), but it silently drops
+  // most of a week's games whenever "today" isn't within 3 days of the
+  // Saturday slate - which is most of the week - so it can't be used to
+  // build the game list this page matches against Fourth & Short's
+  // week-numbered schedule. This pins to the same week number instead.
+  function getScoreboardByWeek(year, week) {
+    var params = "week=" + encodeURIComponent(week) + "&year=" + encodeURIComponent(year) + "&seasontype=2&groups=" + GROUP_ID + "&limit=300";
+    return fetchJson(SITE_BASE + "/scoreboard?" + params, 20 * 1000).then(function (raw) {
+      return (raw.events || []).map(normalizeEvent);
+    });
+  }
   // ESPN's scoreboard only reports "today's current week" as a top-level
-  // field when called with no dates param - adding dates=... (needed for
-  // the rolling weekly window above) drops that field - and Fourth & Short's
-  // API takes a week number rather than a date range, so this reads the
-  // week separately from a plain, undated scoreboard call.
+  // field when called with no dates param - and Fourth & Short's API takes
+  // a week number rather than a date range - so this reads the week from a
+  // plain, undated scoreboard call before either week-pinned fetch above.
   function getCurrentWeekNumber() {
     return fetchJson(SITE_BASE + "/scoreboard?groups=" + GROUP_ID, HOUR).then(function (raw) {
       if (raw.week && raw.week.number) return raw.week.number;
@@ -790,30 +802,26 @@ th, td { padding:6px 8px; text-align:center; border-bottom:1px solid var(--borde
   // team ID (not name - "Miami (OH)" vs "Miami" naming differences between
   // sources would break a name match), then reads ESPN's own odds only for
   // the games that matched, so this never fetches a line Fourth & Short
-  // doesn't also carry.
-  function computeSpreadComparisons(games) {
-    return getCurrentWeekNumber().then(function (week) {
-      if (!week) return { week: null, rows: [] };
-      return getFourthAndShortSchedule(DEFAULT_YEAR, week).then(function (fnsGames) {
-        var fnsByMatchup = {};
-        fnsGames.forEach(function (g) { fnsByMatchup[g.homeTeamId + "_" + g.awayTeamId] = g; });
-        var matched = games.map(function (g) {
-          var fns = fnsByMatchup[String(g.home.id) + "_" + String(g.away.id)];
-          return fns ? { game: g, fns: fns } : null;
-        }).filter(Boolean);
-        return Promise.all(matched.map(function (m) {
-          return getGameOdds(m.game.id).then(function (odds) {
-            if (!odds || (!odds.homeFavorite && !odds.awayFavorite)) return null;
-            var espnHomeSpread = odds.homeFavorite ? -odds.spread : odds.spread;
-            var fnsHomeSpread = m.fns.homeSpread;
-            var diff = Number(Math.abs(espnHomeSpread - fnsHomeSpread).toFixed(1));
-            var flip = (espnHomeSpread < 0 ? "home" : "away") !== (fnsHomeSpread < 0 ? "home" : "away");
-            return { game: m.game, espnHomeSpread: espnHomeSpread, fnsHomeSpread: fnsHomeSpread, diff: diff, flip: flip };
-          }).catch(function () { return null; });
-        })).then(function (results) {
-          return { week: week, rows: results.filter(Boolean).sort(function (a, b) { return b.diff - a.diff; }) };
-        });
-      });
+  // doesn't also carry. Both game lists are expected to already be for the
+  // same week number.
+  function computeSpreadComparisons(games, fnsGames) {
+    var fnsByMatchup = {};
+    fnsGames.forEach(function (g) { fnsByMatchup[g.homeTeamId + "_" + g.awayTeamId] = g; });
+    var matched = games.map(function (g) {
+      var fns = fnsByMatchup[String(g.home.id) + "_" + String(g.away.id)];
+      return fns ? { game: g, fns: fns } : null;
+    }).filter(Boolean);
+    return Promise.all(matched.map(function (m) {
+      return getGameOdds(m.game.id).then(function (odds) {
+        if (!odds || (!odds.homeFavorite && !odds.awayFavorite)) return null;
+        var espnHomeSpread = odds.homeFavorite ? -odds.spread : odds.spread;
+        var fnsHomeSpread = m.fns.homeSpread;
+        var diff = Number(Math.abs(espnHomeSpread - fnsHomeSpread).toFixed(1));
+        var flip = (espnHomeSpread < 0 ? "home" : "away") !== (fnsHomeSpread < 0 ? "home" : "away");
+        return { game: m.game, espnHomeSpread: espnHomeSpread, fnsHomeSpread: fnsHomeSpread, diff: diff, flip: flip };
+      }).catch(function () { return null; });
+    })).then(function (results) {
+      return results.filter(Boolean).sort(function (a, b) { return b.diff - a.diff; });
     });
   }
   function spreadCheckRowHtml(entry) {
@@ -839,20 +847,20 @@ th, td { padding:6px 8px; text-align:center; border-bottom:1px solid var(--borde
   function spreadCheckView(root) {
     setActiveNav("spread-check");
     root.innerHTML =
-      '<section class="view-header"><h1>Spread Check</h1><p class="muted small">Fourth & Short\'s power-rating-implied spread vs. ESPN\'s actual DraftKings line for this week\'s games (roughly three days back through four days ahead), ranked by the size of the gap between the two. Fourth & Short\'s number is a model projection, not a market line, so a big gap means the model and the market disagree - not that either one is "right." Games where the two sources don\'t even agree on who\'s favored are flagged. Click a column heading to sort. Depends on a third-party API reached through a public CORS relay - see this page\'s source comments if it ever stops loading.</p></section>' +
-      '<div id="spread-check-slot">' + loadingHtml("Loading this week's games...") + "</div>";
+      '<section class="view-header"><h1>Spread Check</h1><p class="muted small">Fourth & Short\'s power-rating-implied spread vs. ESPN\'s actual DraftKings line for the current week\'s games, ranked by the size of the gap between the two. Fourth & Short\'s number is a model projection, not a market line, so a big gap means the model and the market disagree - not that either one is "right." Games where the two sources don\'t even agree on who\'s favored are flagged. Click a column heading to sort. Depends on a third-party API reached through a public CORS relay - see this page\'s source comments if it ever stops loading.</p></section>' +
+      '<div id="spread-check-slot">' + loadingHtml("Figuring out the current week...") + "</div>";
     var slot = root.querySelector("#spread-check-slot");
-    var days = [];
-    for (var i = -3; i <= 3; i++) days.push(addDays(new Date(), i));
-    return Promise.all(days.map(function (d) { return getScoreboard(d).catch(function () { return []; }); })).then(function (lists) {
-      var seen = {}, games = [];
-      lists.forEach(function (list) { list.forEach(function (g) { if (!seen[g.id]) { seen[g.id] = true; games.push(g); } }); });
-      if (!games.length) { slot.innerHTML = emptyHtml("No games found for this window."); return; }
-      slot.innerHTML = loadingHtml("Matching " + games.length + " games to Fourth & Short's spreads...");
-      return computeSpreadComparisons(games).then(function (result) {
-        if (!result.week) { slot.innerHTML = errorHtml({ message: "Couldn't determine the current week, or Fourth & Short's API/CORS relay is unreachable right now." }); return; }
-        slot.innerHTML = spreadCheckTableHtml(result.rows);
-        attachSortableTable(slot.querySelector("table"));
+    return getCurrentWeekNumber().then(function (week) {
+      if (!week) { slot.innerHTML = errorHtml({ message: "Couldn't determine the current week - ESPN's scoreboard might be unreachable right now." }); return; }
+      slot.innerHTML = loadingHtml("Loading Week " + week + "'s games...");
+      return Promise.all([getScoreboardByWeek(DEFAULT_YEAR, week), getFourthAndShortSchedule(DEFAULT_YEAR, week)]).then(function (results) {
+        var games = results[0], fnsGames = results[1];
+        if (!games.length) { slot.innerHTML = emptyHtml("No ESPN games found for Week " + week + " yet."); return; }
+        slot.innerHTML = loadingHtml("Matching " + games.length + " games to Fourth & Short's spreads...");
+        return computeSpreadComparisons(games, fnsGames).then(function (rows) {
+          slot.innerHTML = spreadCheckTableHtml(rows);
+          attachSortableTable(slot.querySelector("table"));
+        });
       });
     }).catch(function (err) { slot.innerHTML = errorHtml(err); });
   }
