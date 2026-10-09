@@ -1340,6 +1340,7 @@ th, td { padding:6px 8px; text-align:center; border-bottom:1px solid var(--borde
   // show up in more than one leaderboard.
   // --------------------------------------------------------------------------
   var CORE_LEADERS_BASE = "https://sports.core.api.espn.com/v2/sports/football/leagues/college-football/seasons/";
+  var CORE_ATHLETE_BASE = "https://sports.core.api.espn.com/v2/sports/football/leagues/college-football/athletes/";
   var SEASON_LEADER_CATEGORIES = {
     passingYards: { label: "Passing Yards", unit: "YDS" },
     passingTouchdowns: { label: "Passing TDs", unit: "TD" },
@@ -1511,6 +1512,76 @@ th, td { padding:6px 8px; text-align:center; border-bottom:1px solid var(--borde
     return safeNum((cats.general || {}).gamesPlayed, null);
   }
   // --------------------------------------------------------------------------
+  // Player Bio: height/weight/age/hometown/class/jersey from ESPN's athlete
+  // record. Note: ESPN's free API only ever reports a player's *current*
+  // school/team here - it does not retain transfer history or high school, so
+  // this panel intentionally sticks to what the API actually has.
+  // --------------------------------------------------------------------------
+  var athleteBioCache = {}; // athleteId -> promise
+  function getAthleteBio(athleteId) {
+    if (athleteBioCache[athleteId]) return athleteBioCache[athleteId];
+    var url = CORE_ATHLETE_BASE + encodeURIComponent(athleteId) + "?lang=en&region=us";
+    athleteBioCache[athleteId] = fetchJson(url, 12 * HOUR).then(function (raw) {
+      return {
+        height: raw.displayHeight || null,
+        weight: raw.displayWeight || null,
+        age: safeNum(raw.age, null),
+        jersey: raw.jersey || null,
+        classYear: (raw.experience && raw.experience.displayValue) || null,
+        hometown: raw.birthPlace ? [raw.birthPlace.city, raw.birthPlace.state || raw.birthPlace.country].filter(Boolean).join(", ") : null,
+        headshot: (raw.headshot && raw.headshot.href) || null,
+      };
+    }).catch(function (err) { delete athleteBioCache[athleteId]; throw err; });
+    return athleteBioCache[athleteId];
+  }
+  function bioFactsHtml(bio) {
+    var facts = [["Ht", bio.height], ["Wt", bio.weight], ["Class", bio.classYear], ["Hometown", bio.hometown], ["Jersey", bio.jersey ? "#" + bio.jersey : null]].filter(function (p) { return p[1]; });
+    if (!facts.length) return "";
+    return '<div class="ats-summary">' + facts.map(function (p) {
+      return '<div class="ats-stat"><div class="ats-stat-value">' + escapeHtml(String(p[1])) + '</div><div class="ats-stat-label">' + escapeHtml(p[0]) + "</div></div>";
+    }).join("") + "</div>";
+  }
+  // --------------------------------------------------------------------------
+  // Career stats: this athlete's season line for each of the last several
+  // years (reusing the exact same per-season endpoint/parsing as the main
+  // season-stats panel), so transfers and multi-year careers show up as a
+  // single glance-able table rather than clicking through the year dropdown
+  // one season at a time.
+  // --------------------------------------------------------------------------
+  var CAREER_YEARS_BACK = 5;
+  function careerStatLine(stats, games) {
+    var parts = [];
+    if (games != null) parts.push(games + " GP");
+    if (stats.passing) parts.push(stats.passing.yards + " PASS YDS, " + stats.passing.touchdowns + " TD");
+    else if (stats.rushing) parts.push(stats.rushing.yards + " RUSH YDS, " + stats.rushing.touchdowns + " TD");
+    else if (stats.receiving) parts.push(stats.receiving.yards + " REC YDS, " + stats.receiving.touchdowns + " TD");
+    else if (stats.defense) {
+      var d = stats.defense, bits = [(d.tackles || 0) + " TOT"];
+      if (d.sacks) bits.push(d.sacks + " SACK");
+      if (d.interceptions) bits.push(d.interceptions + " INT");
+      parts.push(bits.join(", "));
+    }
+    return parts.length > 1 ? parts.join(" &middot; ") : (parts[0] || "-");
+  }
+  function getAthleteCareerStats(athleteId, name, position) {
+    var years = [];
+    for (var i = 0; i < CAREER_YEARS_BACK; i++) years.push(DEFAULT_YEAR - i);
+    return Promise.all(years.map(function (y) {
+      return getAthleteSeasonStats(athleteId, y, 2).then(function (raw) {
+        var parsed = seasonStatRowsFromAthlete({ name: name, position: position }, raw);
+        var games = seasonGamesPlayedFromAthlete(raw);
+        var stats = { passing: parsed.passing, rushing: parsed.rushing, receiving: parsed.receiving, defense: seasonDefenseFromAthlete(raw) };
+        return { year: y, games: games, stats: stats, hasData: !!(games || stats.passing || stats.rushing || stats.receiving || stats.defense) };
+      }).catch(function () { return { year: y, hasData: false }; });
+    })).then(function (rows) { return rows.filter(function (r) { return r.hasData; }); });
+  }
+  function careerTableHtml(rows) {
+    if (!rows.length) return '<p class="muted small">No prior-season stats found for this player.</p>';
+    var head = "<thead><tr><th>Year</th><th>Stat Line</th></tr></thead>";
+    var body = rows.map(function (r) { return "<tr><td>" + r.year + "</td><td>" + careerStatLine(r.stats, r.games) + "</td></tr>"; }).join("");
+    return '<table class="standings-table game-log-table">' + head + "<tbody>" + body + "</tbody></table>";
+  }
+  // --------------------------------------------------------------------------
   // Player Game Log: this athlete's stat line from every completed game their
   // team has played this season, matched up by athlete id against the same
   // per-game box scores Pace/Havoc already pull (normalizePlayerBlock already
@@ -1616,11 +1687,28 @@ th, td { padding:6px 8px; text-align:center; border-bottom:1px solid var(--borde
       '<a href="#/scores" class="back-link">&larr; Back to scores</a>' +
       '<div class="team-page-header">' + (logo ? logoHtml(logo, name) : "") + "<div><h1>" + escapeHtml(name) + "</h1>" +
       '<div class="team-record-line">' + [position, team ? teamLinkHtml(teamId, team) : ""].filter(Boolean).join(" &middot; ") + "</div></div></div>" +
+      '<section class="panel"><h2>Player Bio</h2><div id="player-bio-slot">' + loadingHtml("Loading bio...") + "</div></section>" +
       '<div class="filter-bar"><label>Season<select id="player-year">' + yearOptionsHtml(year) + "</select></label></div>" +
       '<section class="panel"><h2>Season Stats</h2><div id="player-stats-slot">' + loadingHtml("Loading season stats...") + "</div></section>" +
+      '<section class="panel"><h2>Career</h2><div id="player-career-slot">' + loadingHtml("Loading career stats...") + "</div></section>" +
       '<section class="panel"><h2>Game Log</h2><div id="player-gamelog-slot">' + (teamId ? loadingHtml("Loading game-by-game stats...") : '<p class="muted small">Game log isn\'t available without a team on file for this player.</p>') + "</div></section>";
 
     root.querySelector("#player-year").addEventListener("change", function (e) { navigate(linkFor(Number(e.target.value))); });
+
+    var bioSlot = root.querySelector("#player-bio-slot");
+    getAthleteBio(athleteId).then(function (bio) {
+      var html = bioFactsHtml(bio);
+      bioSlot.innerHTML = html || '<p class="muted small">No bio details on file for this player.</p>';
+    }).catch(function () {
+      bioSlot.innerHTML = '<p class="muted small">Couldn\'t load bio details right now.</p>';
+    });
+
+    var careerSlot = root.querySelector("#player-career-slot");
+    getAthleteCareerStats(athleteId, name, position).then(function (rows) {
+      careerSlot.innerHTML = careerTableHtml(rows) + '<p class="muted small">Note: ESPN only tracks a player\'s current school, not transfer history - years above reflect whichever team they were on that season.</p>';
+    }).catch(function () {
+      careerSlot.innerHTML = '<p class="muted small">Couldn\'t load career stats right now.</p>';
+    });
 
     if (teamId) {
       var gamelogSlot = root.querySelector("#player-gamelog-slot");
